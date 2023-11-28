@@ -1,4 +1,3 @@
-// Translate the following Python code into Rust, using the same data structures:
 // from typing import Dict, List, Tuple
 
 // import torch
