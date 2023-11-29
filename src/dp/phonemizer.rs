@@ -1,7 +1,7 @@
 use std::collections::{HashMap, HashSet};
 
 use crate::model::model::load_checkpoint;
-use crate::model::predictor::{Predictor, Prediction};
+use crate::model::predictor::{Prediction, Predictor};
 
 const DEFAULT_PUNCTUATION: &str = "().,:?!/–";
 
@@ -19,19 +19,28 @@ pub struct Phonemizer {
 }
 
 impl Phonemizer {
-    pub fn new(predictor: Predictor, lang_phoneme_dict: HashMap<String, HashMap<String, String>>) -> Self {
+    pub fn new(
+        predictor: Predictor,
+        lang_phoneme_dict: HashMap<String, HashMap<String, String>>,
+    ) -> Self {
         Self {
             predictor,
             lang_phoneme_dict,
         }
     }
 
-    pub fn call(&self, text: String, lang: String, punctuation: &str, expand_acronyms: bool, batch_size: i32) -> PhonemizerResult {
-        let texts = if text.is_empty() {vec![]} else {vec![text]};
+    pub fn call(
+        &self,
+        text: String,
+        lang: String,
+        punctuation: &str,
+        expand_acronyms: bool,
+        batch_size: i32,
+    ) -> PhonemizerResult {
+        let texts = if text.is_empty() { vec![] } else { vec![text] };
         self.phonemise_list(texts, lang, punctuation, expand_acronyms, batch_size)
     }
 
-    
     /// Phonemises a list of texts into phonemes.
     ///
     /// # Arguments
@@ -45,19 +54,37 @@ impl Phonemizer {
     /// # Returns
     ///
     /// A `PhonemizerResult` containing the phonemised texts.
-    pub fn phonemise_list(&self, texts: Vec<String>, lang: String, punctuation: &str, expand_acronyms: bool, batch_size: usize) -> PhonemizerResult {
-        let punctuation = if punctuation.is_empty() {DEFAULT_PUNCTUATION} else {punctuation}; // Solution for default arguments
-        let punc_set =  punctuation.chars().collect::<HashSet<char>>(); // Get punctuation set ex. (';', ',', '.')
+    pub fn phonemise_list(
+        &self,
+        texts: Vec<String>,
+        lang: String,
+        punctuation: &str,
+        expand_acronyms: bool,
+        batch_size: usize,
+    ) -> PhonemizerResult {
+        let punctuation = if punctuation.is_empty() {
+            DEFAULT_PUNCTUATION
+        } else {
+            punctuation
+        }; // Solution for default arguments
+        let punc_set = punctuation.chars().collect::<HashSet<char>>(); // Get punctuation set ex. (';', ',', '.')
         let punc_pattern = format!("[{}]", punctuation).to_string(); // Get punctuation pattern ex. "[;,]" idk either
 
         let mut cleaned_words = HashSet::new();
         let mut split_text = &vec![];
 
-        // Go through text and split into words
+        // Go through text and
         for text in texts {
-            let cleaned_text = text.chars().filter(|t| t.is_alphanumeric() || punc_set.contains(t)).collect::<String>(); // Filter out all non-alphanumeric words and non punctuation
+            let cleaned_text = text
+                .chars()
+                .filter(|t| t.is_alphanumeric() || punc_set.contains(t))
+                .collect::<String>(); // Filter out all non-alphanumeric words and non punctuation
             let split = cleaned_text.split(&punc_pattern).collect::<Vec<&str>>();
-            let filtersplit = split.iter().filter(|s| !s.is_empty()).map(|s| s.to_string()).collect::<Vec<String>>();
+            let filtersplit = split
+                .iter()
+                .filter(|s| !s.is_empty())
+                .map(|s| s.to_string())
+                .collect::<Vec<String>>();
             split_text.append(&mut filtersplit.clone());
 
             for word in filtersplit {
@@ -66,13 +93,20 @@ impl Phonemizer {
         }
 
         // Bunch of bullshit with going through words
-        let mut word_phonemes = cleaned_words.iter().map(|word| {
-            let phons = self.get_dict_entry(word, &lang, &punc_set);
-            (word.clone(), phons)
-        }).collect::<HashMap<String, Option<String>>>();
-        let words_to_split = cleaned_words.iter().filter(|word| word_phonemes.get(*word).unwrap().is_none()).map(|word| word.clone()).collect::<Vec<String>>();
+        let mut word_phonemes = cleaned_words
+            .iter()
+            .map(|word| {
+                let phons = self.get_dict_entry(word, &lang, &punc_set);
+                (word.clone(), phons)
+            })
+            .collect::<HashMap<String, Option<String>>>();
+        let words_to_split = cleaned_words
+            .iter()
+            .filter(|word| word_phonemes.get(*word).unwrap().is_none())
+            .map(|word| word.clone())
+            .collect::<Vec<String>>();
         let mut word_splits = HashMap::new();
-        
+
         // Expand acronyms if expand_acronyms is true
         for word in words_to_split {
             let key = word.clone();
@@ -81,7 +115,7 @@ impl Phonemizer {
             word_splits.insert(key, word_split);
         }
 
-        
+        // Get subwords
         let mut subwords = HashSet::new();
         for values in word_splits.values() {
             for w in values {
@@ -91,11 +125,18 @@ impl Phonemizer {
 
         for subword in subwords {
             if !word_phonemes.contains_key(&subword) {
-                word_phonemes.insert(subword.clone(), self.get_dict_entry(&subword, &lang, &punc_set));
+                word_phonemes.insert(
+                    subword.clone(),
+                    self.get_dict_entry(&subword, &lang, &punc_set),
+                );
             }
         }
 
-        let words_to_predict = word_phonemes.iter().filter(|(word, phons)| phons.is_none() && word_splits.get(*word).unwrap().len() <= 1).map(|(word, _)| word.clone()).collect::<Vec<String>>();
+        let words_to_predict = word_phonemes
+            .iter()
+            .filter(|(word, phons)| phons.is_none() && word_splits.get(*word).unwrap().len() <= 1)
+            .map(|(word, _)| word.clone())
+            .collect::<Vec<String>>();
 
         let predictions = self.predictor.predict(words_to_predict, lang, batch_size);
 
@@ -109,13 +150,19 @@ impl Phonemizer {
             pred_dict.insert(pred.word.clone(), pred);
         }
 
-        let phoneme_lists = split_text.iter().map(|text| {
-            text.iter().map(|word| {
-                self.get_phonemes(word, &word_phonemes, &word_splits)
-            }).collect::<Vec<String>>()
-        }).collect::<Vec<Vec<String>>>();
+        let phoneme_lists = split_text
+            .iter()
+            .map(|text| {
+                text.iter()
+                    .map(|word| self.get_phonemes(word, &word_phonemes, &word_splits))
+                    .collect::<Vec<String>>()
+            })
+            .collect::<Vec<Vec<String>>>();
 
-        let phonemes_joined = phoneme_lists.iter().map(|phoneme_list| phoneme_list.join("")).collect::<Vec<String>>();
+        let phonemes_joined = phoneme_lists
+            .iter()
+            .map(|phoneme_list| phoneme_list.join(""))
+            .collect::<Vec<String>>();
 
         PhonemizerResult {
             text: texts,
@@ -126,7 +173,12 @@ impl Phonemizer {
         }
     }
 
-    fn get_dict_entry(&self, word: &String, lang: &String, punc_set: &HashSet<char>) -> Option<String> {
+    fn get_dict_entry(
+        &self,
+        word: &String,
+        lang: &String,
+        punc_set: &HashSet<char>,
+    ) -> Option<String> {
         if punc_set.contains(&word.chars().next().unwrap()) || word.is_empty() {
             return Some(word.clone());
         }
@@ -167,18 +219,30 @@ impl Phonemizer {
         }
     }
 
-    fn get_phonemes(&self, word: &String, word_phonemes: &HashMap<String, Option<String>>, word_splits: &HashMap<String, Vec<&str>>) -> String {
+    fn get_phonemes(
+        &self,
+        word: &String,
+        word_phonemes: &HashMap<String, Option<String>>,
+        word_splits: &HashMap<String, Vec<&str>>,
+    ) -> String {
         let phons = word_phonemes.get(word).unwrap();
         if phons.is_none() {
             let subwords = word_splits.get(word).unwrap();
-            let subphons = subwords.iter().map(|w| word_phonemes.get(*w).unwrap().clone().unwrap()).collect::<Vec<String>>();
+            let subphons = subwords
+                .iter()
+                .map(|w| word_phonemes.get(*w).unwrap().clone().unwrap())
+                .collect::<Vec<String>>();
             subphons.join("")
         } else {
             phons.clone().unwrap()
         }
     }
 
-    pub fn from_checkpoint(checkpoint_path: String, device: String, lang_phoneme_dict: HashMap<String, HashMap<String, String>>) -> Self {
+    pub fn from_checkpoint(
+        checkpoint_path: String,
+        device: String,
+        lang_phoneme_dict: HashMap<String, HashMap<String, String>>,
+    ) -> Self {
         let (model, checkpoint) = load_checkpoint(checkpoint_path, device);
         let applied_phoneme_dict = if lang_phoneme_dict.is_empty() {
             if checkpoint.contains_key("phoneme_dict") {
@@ -234,7 +298,7 @@ mod tests {
         let word = String::from("USA");
         let expand_acronyms = true;
         let result = phonemizer.expand_acronym(word, expand_acronyms);
-        assert_eq!(result, /* expected expanded acronym */);
+        assert_eq!(result /* expected expanded acronym */,);
 
         // Test case 2: expand_acronyms is false
         let word = String::from("USA");
@@ -244,6 +308,4 @@ mod tests {
     }
 
     // Add more test cases for other functions...
-
 }
-
