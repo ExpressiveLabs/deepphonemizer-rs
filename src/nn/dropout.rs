@@ -16,10 +16,10 @@ impl Debug for Dropout {
 }
 
 impl Module for Dropout {
-    fn forward(&self, x: tch::Tensor) -> tch::Tensor {
-        if self.train && self.p > 0.0 {
-            return F::dropout(x, self.p, self.train, self.in_place)
-        }
+    fn forward(&self, x: &tch::Tensor) -> tch::Tensor {
+        // if self.train && self.p > 0.0 {
+        //     return F::dropout(x, self.p, self.train, self.in_place)
+        // }
 
         x
     }

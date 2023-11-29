@@ -162,7 +162,7 @@ impl Predictor {
         }
     }
 
-    pub fn predict(&self, words: Vec<String>, lang: String, batch_size: i64) -> Vec<Prediction> {
+    pub fn predict(&self, words: Vec<String>, lang: String, batch_size: usize) -> Vec<Prediction> {
         let mut predictions: HashMap<String, (Vec<i64>, Vec<f32>)> = HashMap::new();
         let mut valid_texts: HashSet<String> = HashSet::new();
 
@@ -197,8 +197,8 @@ impl Predictor {
         output
     }
 
-    fn predict_batch(&self, texts: Vec<String>, batch_size: i64, language: String) -> HashMap<String, (Vec<i64>, Vec<f32>)> {
-        let mut predictions: HashMap<String, (Vec<i64>, Vec<f32>)> = HashMap::new();
+    fn predict_batch(&self, texts: Vec<String>, batch_size: usize, language: String) -> HashMap<String, (Vec<i64>, Vec<f32>)> {
+        let mut predictions: HashMap<String, (Vec<i32>, Vec<f32>)> = HashMap::new();
         let text_batches = batchify(texts, batch_size);
         for text_batch in text_batches {
             let mut input_batch: Vec<Tensor> = vec![];
@@ -206,7 +206,7 @@ impl Predictor {
             for text in text_batch {
                 let input = self.text_tokenizer.preprocess(text.clone());
                 input_batch.push(Tensor::of_slice(&input));
-                lens_batch.push(Tensor::of_slice(&[input.len() as i64]));
+                lens_batch.push(Tensor::of_slice(&[input.len() as i32]));
             }
 
             let input_batch = Tensor::stack(&input_batch, 0);

@@ -10,4 +10,6 @@ impl Preprocessor {
     pub fn preprocess(&self, text: String) -> String {
         text.to_string()
     }
+
+    pub fn decode()
 }
