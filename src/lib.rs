@@ -2,6 +2,8 @@ pub mod model;
 pub mod dp;
 pub mod preprocessing;
 
+pub mod nn;
+
 pub fn add(left: usize, right: usize) -> usize {
     left + right
 }
