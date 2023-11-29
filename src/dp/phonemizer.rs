@@ -53,6 +53,7 @@ impl Phonemizer {
         let mut cleaned_words = HashSet::new();
         let mut split_text = &vec![];
 
+        // Go through text and split into words
         for text in texts {
             let cleaned_text = text.chars().filter(|t| t.is_alphanumeric() || punc_set.contains(t)).collect::<String>(); // Filter out all non-alphanumeric words and non punctuation
             let split = cleaned_text.split(&punc_pattern).collect::<Vec<&str>>();
