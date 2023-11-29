@@ -21,7 +21,7 @@ impl Module for Dropout {
         //     return F::dropout(x, self.p, self.train, self.in_place)
         // }
 
-        x
+        x.shallow_clone()
     }
 }
 

@@ -1,7 +1,10 @@
 // Translate the following Python code to Rust:
 use std::fmt::{Debug, Formatter};
-use tch::Kind;
+use tch::{Device, Kind};
 use tch::nn::Module;
+use tch::Tensor;
+
+use anyhow::Result;
 
 use crate::nn::dropout::Dropout;
 
@@ -10,7 +13,7 @@ use crate::nn::dropout::Dropout;
 
 struct PositionalEncoding {
     dropout: Dropout,
-    scale: tch::Tensor,
+    scale: Tensor,
 }
 
 impl PositionalEncoding {
@@ -22,13 +25,13 @@ impl PositionalEncoding {
         //   max_len (int): Maximum input length. [Default: 5000]
 
         let dropout = Dropout::new(dropout, false);
-        let scale = torch.nn.Parameter(torch.ones(1));
+        let scale = tch::nn::Parameter(Tensor::ones(1));
 
-        pe = torch.zeros(max_len, d_model);
-        position = torch.arange(0, max_len, dtype = torch.float).unsqueeze(1);
-        div_term = torch.exp(torch.arange(0, d_model, 2).float() * (-math.log(10000.0) / d_model));
-        pe[:, 0::2] = torch.sin(position * div_term);
-        pe[:, 1::2] = torch.cos(position * div_term);
+        let mut pe = Tensor::zeros(max_len, d_model);
+        let position = Tensor::arange(max_len, (Kind::Float, Device::cuda_if_available())).unsqueeze(1);
+        let div_term = Tensor::exp(Tensor::arange(0, d_model, 2).float() * (10000.0.log() / d_model));
+        pe[..][0::2] = Tensor::sin(position * div_term);
+        pe[..][1::2] = Tensor::cos(position * div_term);
         pe = pe.unsqueeze(0).transpose(0, 1);
         self.register_parameter("pe", torch.nn.Parameter(pe, requires_grad = False));
 
@@ -46,14 +49,14 @@ impl Debug for PositionalEncoding {
 }
 
 impl Module for PositionalEncoding {
-    fn forward( self , x: torch.Tensor) -> torch.Tensor: # shape: [T, N] {
-        x = x + self .scale * self .pe[: x.size(0), : ]
-        return self .dropout(x)
+    fn forward(&self , x: Tensor) -> Tensor {
+        let _x = x + self.scale.shallow_clone() * self.pe[..x.size(0)][..];
+        return self.dropout(_x)
     }
 }
 
 
-pub fn get_dedup_tokens(logits_batch: tch::Tensor) -> (tch::Tensor, tch::Tensor) {
+pub fn get_dedup_tokens(logits_batch: Tensor) -> (Tensor, Tensor) {
     // Converts a batch of logits into the batch most probable tokens and their probabilities.
     //
     // Args:
@@ -70,12 +73,12 @@ pub fn get_dedup_tokens(logits_batch: tch::Tensor) -> (tch::Tensor, tch::Tensor)
 
     for i in 0..logits_batch.size(0) {
         let logits = logits_batch[i];
-        let (max_logits, max_indices) = tch::Tensor::max(logits, -1);
+        let (max_logits, max_indices) = Tensor::max(logits, -1);
         max_logits = max_logits[max_indices != 0];
         max_indices = max_indices[max_indices != 0];
 
-        let (cons_tokens, counts, _) = tch::Tensor::unique_consecutive(max_indices, true, true, None);
-        let mut out_probs_i = tch::Tensor::zeros(counts.len(), (Kind::Float, logits.device));
+        let (cons_tokens, counts, _) = Tensor::unique_consecutive(max_indices, true, true, None);
+        let mut out_probs_i = Tensor::zeros(counts.len(), (Kind::Float, logits.device));
         let mut ind = 0;
 
         for (i, c) in counts.enumerate() {
@@ -95,23 +98,28 @@ pub fn get_dedup_tokens(logits_batch: tch::Tensor) -> (tch::Tensor, tch::Tensor)
 }
 
 
-def _generate_square_subsequent_mask(sz: int) -> torch.Tensor:
-    mask = torch.triu(torch.ones(sz, sz), 1)
-    mask = mask.masked_fill(mask == 1, float('-inf'))
-    return mask
+pub fn _generate_square_subsequent_mask(sz: usize) -> Tensor {
+    let mut mask = Tensor::triu(&Tensor::ones([sz, sz], ), 1);
+    mask.masked_fill(mask == 1, f32::consts::NEG_INFINITY)
+}
 
 
-def _make_len_mask(inp: torch.Tensor) -> torch.Tensor:
-    return (inp == 0).transpose(0, 1)
+pub fn _make_len_mask(inp: &mut Tensor) -> Result<Tensor> {
+    Ok((inp.f_eq_(0)?).transpose(0, 1))
+}
 
-
-def _get_len_util_stop(sequence: torch.Tensor, end_index: int) -> int:
-    for i, val in enumerate(sequence):
-        if val == end_index:
+pub fn _get_len_util_stop(sequence: &Tensor, end_index: usize) -> usize {
+    for (i, val) in sequence.iter().unwrap().enumerate() {
+        if val == end_index {
             return i + 1
-    return len(sequence)
+        }
+    }
+
+    sequence.size()[0] as usize
+}
 
 
-def _trim_util_stop(sequence: torch.Tensor, end_index: int) -> torch.Tensor:
-    seq_len = _get_len_util_stop(sequence, end_index)
-    return sequence[:seq_len]
+pub fn _trim_util_stop(sequence: &Tensor, end_index: usize) -> Tensor {
+    let seq_len = _get_len_util_stop(sequence, end_index);
+    sequence[..seq_len]
+}
