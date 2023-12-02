@@ -2,8 +2,17 @@ use std::collections::{HashMap, HashSet};
 
 use crate::model::model::load_checkpoint;
 use crate::model::predictor::{Prediction, Predictor};
+use tools;
 
 const DEFAULT_PUNCTUATION: &str = "().,:?!/–";
+
+pub fn to_title_case(word: &str) -> String {
+    let mut chars = word.chars();
+    match chars.next() {
+        None => String::new(),
+        Some(f) => f.to_uppercase().collect::<String>() + chars.as_str(),
+    }
+}
 
 pub struct PhonemizerResult {
     text: Vec<String>,
@@ -177,29 +186,20 @@ impl Phonemizer {
         }
     }
 
-    fn get_dict_entry(
-        &self,
-        word: &String,
-        lang: &String,
-        punc_set: &HashSet<char>,
-    ) -> Option<String> {
+    fn get_dict_entry(&self, word: &str, lang: &str, punc_set: &HashSet<char>) -> Option<String> {
         if punc_set.contains(&word.chars().next().unwrap()) || word.is_empty() {
-            return Some(word.clone());
+            return Some(word.to_owned());
         }
-        if self.lang_phoneme_dict.contains_key(lang) {
-            let phoneme_dict = self.lang_phoneme_dict.get(lang).unwrap();
-            if phoneme_dict.contains_key(word) {
-                return Some(phoneme_dict.get(word).unwrap().clone());
-            } else if phoneme_dict.contains_key(&word.to_lowercase()) {
-                return Some(phoneme_dict.get(&word.to_lowercase()).unwrap().clone());
-            } else if phoneme_dict.contains_key(&word.to_title_case()) {
-                return Some(phoneme_dict.get(&tools::toTitleCase(&word)).unwrap().clone());
-            } else {
-                return None;
-            }
-        } else {
-            return None;
-        }
+    
+        self.lang_phoneme_dict.get(lang).and_then(|phoneme_dict| {
+            let lowercase_word = word.to_lowercase();
+            let title_case_word = to_title_case(&word);
+    
+            phoneme_dict.get(word)
+                .or_else(|| phoneme_dict.get(&lowercase_word))
+                .or_else(|| phoneme_dict.get(&title_case_word))
+                .map(|entry| entry.clone())
+        })
     }
 
     fn expand_acronym(&self, word: String, expand_acronyms: bool) -> String {
