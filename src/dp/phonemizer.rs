@@ -2,7 +2,6 @@ use std::collections::{HashMap, HashSet};
 
 use crate::model::model::load_checkpoint;
 use crate::model::predictor::{Prediction, Predictor};
-use tools;
 
 const DEFAULT_PUNCTUATION: &str = "().,:?!/–";
 
@@ -202,25 +201,30 @@ impl Phonemizer {
         })
     }
 
-    fn expand_acronym(&self, word: String, expand_acronyms: bool) -> String {
-        if expand_acronyms {
-            let subwords = word.split("-").collect::<Vec<&str>>();
-            let mut expanded = vec![];
-            for subword in subwords {
-                let mut subword = subword.chars().collect::<Vec<char>>();
-                let mut subword_clone = subword.clone();
-                expanded.append(&mut subword);
-                for (a, b) in subword_clone.iter().zip(subword_clone.iter().skip(1)) {
-                    expanded.push(*a);
-                    if b.is_uppercase() {
-                        expanded.push('-');
+    fn expand_acronym(word: String, expand_acronyms: bool) -> String {
+        if !expand_acronyms {
+            return word;
+        }
+    
+        let expanded: String = word
+            .split('-')
+            .flat_map(|subword| {
+                let mut subword_chars = subword.chars();
+                let mut result = String::new();
+    
+                if let Some(first_char) = subword_chars.next() {
+                    result.push(first_char);
+                    for (a, b) in subword_chars.clone().zip(subword_chars) {
+                        result.push(a);
+                        if b.is_uppercase() {
+                            result.push('-');
+                        }
                     }
                 }
-            }
-            expanded.iter().collect::<String>()
-        } else {
-            word
-        }
+                result.chars()
+            })
+            .collect();
+        expanded
     }
 
     fn get_phonemes(
