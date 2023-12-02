@@ -147,6 +147,7 @@ pub struct Prediction {
     pub probability: f32,
 }
 
+/// Performs model predictions on a batch of inputs
 pub struct Predictor {
     model: CModule,
     text_tokenizer: Preprocessor,
