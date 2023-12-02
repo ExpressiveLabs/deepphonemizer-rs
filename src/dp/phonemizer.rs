@@ -8,7 +8,7 @@ const DEFAULT_PUNCTUATION: &str = "().,:?!/–";
 pub struct PhonemizerResult {
     text: Vec<String>,
     phonemes: Vec<String>,
-    split_text: Vec<Vec<String>>,
+    split_text: Vec<String>,
     split_phonemes: Vec<Vec<String>>,
     predictions: HashMap<String, Prediction>,
 }
@@ -41,7 +41,7 @@ impl Phonemizer {
         self.phonemise_list(texts, lang, punctuation, expand_acronyms, batch_size)
     }
 
-    /// Phonemises a list of texts into phonemes.
+    /// Phonemizes a list of texts and returns tokenized texts, phonemes and word predictions with probabilities.
     ///
     /// # Arguments
     ///
@@ -92,7 +92,7 @@ impl Phonemizer {
             }
         }
 
-        // Bunch of bullshit with going through words
+        // collect dictionary phonemes for words and hyphenated words
         let mut word_phonemes = cleaned_words
             .iter()
             .map(|word| {
@@ -100,6 +100,8 @@ impl Phonemizer {
                 (word.clone(), phons)
             })
             .collect::<HashMap<String, Option<String>>>();
+
+        // if word is not in dictionary, split it into subwords
         let words_to_split = cleaned_words
             .iter()
             .filter(|word| word_phonemes.get(*word).unwrap().is_none())
@@ -115,7 +117,7 @@ impl Phonemizer {
             word_splits.insert(key, word_split);
         }
 
-        // Get subwords
+        // collect dictionary entries of subwords
         let mut subwords = HashSet::new();
         for values in word_splits.values() {
             for w in values {
@@ -132,6 +134,7 @@ impl Phonemizer {
             }
         }
 
+        // predict all subwords that are missing in the phoneme dict
         let words_to_predict = word_phonemes
             .iter()
             .filter(|(word, phons)| phons.is_none() && word_splits.get(*word).unwrap().len() <= 1)
@@ -150,11 +153,12 @@ impl Phonemizer {
             pred_dict.insert(pred.word.clone(), pred);
         }
 
+        // collect all phonemes
         let phoneme_lists = split_text
             .iter()
             .map(|text| {
-                text.iter()
-                    .map(|word| self.get_phonemes(word, &word_phonemes, &word_splits))
+                text.chars()
+                    .map(|text| text.to_string())
                     .collect::<Vec<String>>()
             })
             .collect::<Vec<Vec<String>>>();
@@ -167,7 +171,7 @@ impl Phonemizer {
         PhonemizerResult {
             text: texts,
             phonemes: phonemes_joined,
-            split_text,
+            split_text: split_text.to_vec(),
             split_phonemes: phoneme_lists,
             predictions: pred_dict,
         }
@@ -189,7 +193,7 @@ impl Phonemizer {
             } else if phoneme_dict.contains_key(&word.to_lowercase()) {
                 return Some(phoneme_dict.get(&word.to_lowercase()).unwrap().clone());
             } else if phoneme_dict.contains_key(&word.to_title_case()) {
-                return Some(phoneme_dict.get(&word.to_title_case()).unwrap().clone());
+                return Some(phoneme_dict.get(&tools::toTitleCase(&word)).unwrap().clone());
             } else {
                 return None;
             }
