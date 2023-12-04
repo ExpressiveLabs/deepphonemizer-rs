@@ -2,6 +2,11 @@ use std::collections::{HashMap, HashSet};
 
 use crate::model::model::load_checkpoint;
 use crate::model::predictor::{Prediction, Predictor};
+use std::path::Path;
+use tch::{Device, CModule};
+use serde::{Deserialize, Serialize};
+use std::fs::File;
+use std::io::Read;
 
 const DEFAULT_PUNCTUATION: &str = "().,:?!/–";
 
@@ -11,6 +16,16 @@ pub fn to_title_case(word: &str) -> String {
         None => String::new(),
         Some(f) => f.to_uppercase().collect::<String>() + chars.as_str(),
     }
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct PhonemizerConfig {
+    pub text_symbols: Vec<String>,
+    pub phoneme_symbols: Vec<String>,
+    pub lang_symbols: Vec<String>,
+    pub char_repeats: isize,
+    pub lowercase: bool,
+    pub phoneme_dict: HashMap<String, HashMap<String, String>>,
 }
 
 pub struct PhonemizerResult {
@@ -247,21 +262,28 @@ impl Phonemizer {
     }
 
     pub fn from_checkpoint(
-        checkpoint_path: String,
-        device: String,
+        model_path: &Path,
+        config_path: &Path,
+        device: Device,
         lang_phoneme_dict: HashMap<String, HashMap<String, String>>,
     ) -> Self {
-        let (model, checkpoint) = load_checkpoint(checkpoint_path, device);
-        let applied_phoneme_dict = if lang_phoneme_dict.is_empty() {
-            if checkpoint.contains_key("phoneme_dict") {
-                checkpoint.get("phoneme_dict").unwrap().clone()
-            } else {
-                HashMap::new()
+        let model = CModule::load_on_device(model_path, device)?;
+
+        // Load config file and read to string
+        let mut cfg_file = File::open(config_path).expect("Unable to open file");
+        let mut cfg_content = String::new();
+        cfg_file.read_to_string(&mut cfg_content).expect("Unable to read file");
+        // Parse YAML string
+        let config: PhonemizerConfig = serde_json::from_str(&cfg_content).expect("Unable to parse YAML");
+        // let (model, checkpoint) = load_checkpoint(checkpoint_path, device);
+        let applied_phoneme_dict: HashMap<String, HashMap<String, String>> = 
+            if !lang_phoneme_dict.is_empty() {
+                lang_phoneme_dict
             }
-        } else {
-            lang_phoneme_dict
-        };
-        let preprocessor = checkpoint.get("preprocessor").unwrap().clone();
+            else {
+                config.phoneme_dict.clone()
+            };
+        let preprocessor = crate::preprocessing::text::Preprocessor::from_config(config);
         let predictor = Predictor::new(model, preprocessor);
         let model_step = checkpoint.get("step").unwrap().clone();
         Phonemizer::new(predictor, applied_phoneme_dict)
