@@ -138,6 +138,8 @@ use std::collections::HashSet;
 use anyhow::Result;
 
 use tch::{CModule, Tensor, Device, Kind};
+use tch::nn::VarStore;
+use tch::jit::IValue;
 
 use crate::preprocessing::text::{Preprocessor, SequenceTokenizer};
 use crate::preprocessing::util::batchify;
@@ -207,7 +209,7 @@ impl PredictorClass {
         Ok(output)
     }
 
-    fn predict_batch(&self, texts: Vec<String>, batch_size: usize, language: String) -> Result<HashMap<String, (Vec<i64>, Vec<f32>)>> {
+    fn predict_batch(&self, texts: Vec<String>, batch_size: usize, language: String) -> Result<HashMap<String, (Vec<i32>, Vec<f32>)>> {
         
         let mut predictions: HashMap<String, (Vec<i32>, Vec<f32>)> = HashMap::new();
         let text_batches = batchify(texts, batch_size);
@@ -227,27 +229,56 @@ impl PredictorClass {
             let lens_batch = Tensor::stack(&lens_batch, 0).to(self.device);
             let start_indx = self.phoneme_tokenizer.get_start_index(&language) as i64;
             let start_inds = Tensor::from_slice(&vec![start_indx; input_batch.size()[0].try_into().unwrap()]).to(self.device);
-            let mut batch = HashMap::new()
+            let mut batch = HashMap::new();
             batch.insert("text", input_batch);
             batch.insert("text_len", lens_batch);
             batch.insert("start_index", start_inds);
-            // [
-            //     ("text", input_batch),
-            //     ("text_len", lens_batch),
-            //     ("start_index", start_inds),
-            // ];
-            let output_batch = self.model.forward_ts(&batch).unwrap();
-            let probs_batch = output_batch.get(1);
-            let output_batch = output_batch.get(0);
+
+            let batch: Vec<(IValue, IValue)> = batch
+                .into_iter()
+                .map(|(key, value)| (IValue::String(key.to_string()), IValue::Tensor(value)))
+                .collect();
+
+            //let batch_input = IValue::GenericDict(batch);
+            let batch_input = IValue::from(batch);
+
+            let output_raw: IValue = self.model.method_is("generate", &[batch_input])?;
+            let output_raw: Vec<IValue> = output_raw.try_into()?;
+            let output_batch: Tensor = output_raw[0].try_into()?;
+            let probs_batch: Tensor = output_raw[1].try_into()?;
+            
 
             // Don't think this second call is needed, but will keep it commented untill tested
             // let probs_batch = self.model.forward_ts(&batch).unwrap();
             // let probs_batch = probs_batch.get(1);
+            // output_batch.chunk(chunks, dim)
+            text_batch.into_iter()
+            .zip(output_batch.chunk(text_batch.len() as i64, 0).iter())
+            .zip(probs_batch.chunk(text_batch.len() as i64, 0).iter())
+            .map(|((text, output), probs)| {
+                let seq_len = get_len_util_stop(output, self.phoneme_tokenizer.end_index) as i64;
+                let output_list: Vec<i32> = output
+                    .squeeze()
+                    .slice(0, 0, seq_len, 1)
+                    .to_kind(Kind::Int)
+                    .try_into()
+                    .unwrap();
 
-            for (text, output, probs) in text_batch.iter().zip(output_batch.iter().zip(probs_batch.iter())) {
-                let seq_len = get_len_util_stop(output, self.phoneme_tokenizer.end_index);
-                predictions.insert(text.clone(), (output.get(0..seq_len).to_kind(Kind::Int64).to_vec(), probs.get(0..seq_len).to_kind(Kind::Float).to_vec()));
-            }
+                let probs_list: Vec<f32> = probs
+                    .squeeze()
+                    .slice(0, 0, seq_len, 1)
+                    .to_kind(Kind::Float)
+                    .try_into()
+                    .unwrap();
+
+                predictions.insert(text.clone(), (output_list, probs_list));
+                // (text, (output_list, probs_list))
+            })
+            .collect()
+            // for (text, output, probs) in text_batch.iter().zip(output_batch.iter()?.zip(probs_batch.iter())) {
+            //     let seq_len = get_len_util_stop(output, self.phoneme_tokenizer.end_index);
+            //     predictions.insert(text.clone(), (output.get(0..seq_len).to_kind(Kind::Int64).to_vec(), probs.get(0..seq_len).to_kind(Kind::Float).to_vec()));
+            // }
         }
 
         Ok(predictions)
