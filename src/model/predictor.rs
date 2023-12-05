@@ -140,6 +140,7 @@ use anyhow::Result;
 use tch::{CModule, Tensor, Device, Kind};
 
 use crate::preprocessing::text::{Preprocessor, SequenceTokenizer};
+use crate::preprocessing::util::batchify;
 
 
 #[derive(Debug, Clone)]
