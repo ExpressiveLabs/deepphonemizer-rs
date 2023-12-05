@@ -3,7 +3,7 @@ use std::collections::{HashMap, HashSet};
 use crate::model::model::load_checkpoint;
 use crate::model::predictor::{Prediction, Predictor};
 use std::path::Path;
-use tch::{Device, CModule};
+use tch::{Device, CModule, TchError};
 use serde::{Deserialize, Serialize};
 use std::fs::File;
 use std::io::Read;
@@ -58,7 +58,7 @@ impl Phonemizer {
         lang: String,
         punctuation: &str,
         expand_acronyms: bool,
-        batch_size: i32,
+        batch_size: usize,
     ) -> PhonemizerResult {
         let texts = if text.is_empty() { vec![] } else { vec![text] };
         self.phonemise_list(texts, lang, punctuation, expand_acronyms, batch_size)
@@ -266,27 +266,32 @@ impl Phonemizer {
         config_path: &Path,
         device: Device,
         lang_phoneme_dict: HashMap<String, HashMap<String, String>>,
-    ) -> Self {
+    ) -> Result<Self, TchError> {
+        // Load model
         let model = CModule::load_on_device(model_path, device)?;
 
         // Load config file and read to string
-        let mut cfg_file = File::open(config_path).expect("Unable to open file");
-        let mut cfg_content = String::new();
-        cfg_file.read_to_string(&mut cfg_content).expect("Unable to read file");
+        let cfg_content = {
+            let mut cfg_file = File::open(config_path).expect("Unable to open file");
+            let mut content = String::new();
+            cfg_file.read_to_string(&mut content).expect("Unable to read file");
+            content
+        };
         // Parse YAML string
         let config: PhonemizerConfig = serde_json::from_str(&cfg_content).expect("Unable to parse YAML");
-        // let (model, checkpoint) = load_checkpoint(checkpoint_path, device);
-        let applied_phoneme_dict: HashMap<String, HashMap<String, String>> = 
-            if !lang_phoneme_dict.is_empty() {
-                lang_phoneme_dict
-            }
-            else {
+
+        let applied_phoneme_dict = if !lang_phoneme_dict.is_empty() {
+            lang_phoneme_dict
+        } else {
+            if config.phoneme_dict.is_empty() {
+                panic!("Empty phoneme dictionary provided");
+            } else {
                 config.phoneme_dict.clone()
-            };
+            }
+        };
         let preprocessor = crate::preprocessing::text::Preprocessor::from_config(config);
         let predictor = Predictor::new(model, preprocessor);
-        let model_step = checkpoint.get("step").unwrap().clone();
-        Phonemizer::new(predictor, applied_phoneme_dict)
+        Ok(Phonemizer::new(predictor, applied_phoneme_dict))
     }
 }
 

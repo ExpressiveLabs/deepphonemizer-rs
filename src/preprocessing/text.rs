@@ -153,9 +153,9 @@ impl SequenceTokenizer {
 }
 
 pub struct Preprocessor {
-    lang_tokenizer: LanguageTokenizer,
-    text_tokenizer: SequenceTokenizer,
-    phoneme_tokenizer: SequenceTokenizer,
+    pub lang_tokenizer: LanguageTokenizer,
+    pub text_tokenizer: SequenceTokenizer,
+    pub phoneme_tokenizer: SequenceTokenizer,
 }
 
 impl Preprocessor {

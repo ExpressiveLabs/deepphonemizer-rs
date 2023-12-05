@@ -137,7 +137,7 @@ use std::collections::HashSet;
 
 use tch::{CModule, Tensor, Device, Kind};
 
-use crate::preprocessing::text::Preprocessor;
+use crate::preprocessing::text::{Preprocessor, SequenceTokenizer};
 
 
 #[derive(Debug, Clone)]
@@ -150,13 +150,15 @@ pub struct Prediction {
 /// Performs model predictions on a batch of inputs
 pub struct Predictor {
     model: CModule,
-    text_tokenizer: Preprocessor,
-    phoneme_tokenizer: Preprocessor,
+    text_tokenizer: SequenceTokenizer,
+    phoneme_tokenizer: SequenceTokenizer,
 }
 
 impl Predictor {
-    pub fn new(model: CModule, text_tokenizer: Preprocessor, phoneme_tokenizer: Preprocessor) -> Predictor {
-        Predictor {
+    pub fn new(model: CModule, preprocessor: Preprocessor) -> Self {
+        let text_tokenizer = preprocessor.text_tokenizer;
+        let phoneme_tokenizer = preprocessor.phoneme_tokenizer;
+        Self {
             model,
             text_tokenizer,
             phoneme_tokenizer,
