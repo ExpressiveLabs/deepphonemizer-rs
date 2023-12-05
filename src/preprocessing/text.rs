@@ -57,10 +57,10 @@ impl SequenceTokenizer {
     pub fn new(symbols: Vec<String>, languages: Vec<String>, char_repeats: usize, lowercase: bool, append_start_end: bool, pad_token: String, end_token: String) -> Self {
         let pad_index = 0;
 
-        let mut token_to_idx = HashMap::new();
+        let mut token_to_idx = HashMap::with_capacity(symbols.len() + languages.len() + 3);
         token_to_idx.insert(pad_token.clone(), pad_index);
 
-        let mut special_tokens = HashSet::new();
+        let mut special_tokens = HashSet::with_capacity(languages.len() + 2);
         special_tokens.insert(pad_token.clone());
         special_tokens.insert(end_token.clone());
 
@@ -92,34 +92,34 @@ impl SequenceTokenizer {
         }
     }
 
-    pub fn call(&self, sentence: &Vec<String>, lang: String) -> Result<Vec<usize>> {
-        if !self.languages.contains(&lang) {
-            panic!("Language not found");
+    pub fn call(&self, sentence: &[String], lang: &str) -> Result<Vec<usize>> {
+        if !self.languages.contains(&lang.to_string()) {
+            return Err(anyhow::Error::msg("Language not supported"));
         }
-        
-        let mut newsentence = vec![];
-        for item in sentence.iter() {
+    
+        let mut newsentence: Vec<&String> = Vec::new();
+        for item in sentence {
             for _ in 0..self.char_repeats {
                 newsentence.push(item);
             }
         }
-        
+    
         if self.lowercase {
-            newsentence.iter_mut().map(|x| x.to_lowercase());
+            newsentence.iter_mut().for_each(|x| { x.to_lowercase(); });
         }
-        let mut sequence = vec![];
-        for c in newsentence {
-            if self.token_to_idx.contains_key(c) {
-                sequence.push(self.token_to_idx.get(c).unwrap().clone());
-            }
-        }
-
-        if self.append_start_end {
-            let lang_token = self.get_start_index(lang);
-            sequence.insert(0, lang_token);
-            sequence.push(self.end_index);
-        }
-
+    
+        let sequence: Vec<usize> = newsentence
+            .iter()
+            .filter_map(|&c| self.token_to_idx.get(c).cloned())
+            .collect();
+    
+        let sequence = if self.append_start_end {
+            let lang_token = self.get_start_index(lang.to_string());
+            [vec![lang_token], sequence, vec![self.end_index]].concat()
+        } else {
+            sequence
+        };
+    
         Ok(sequence)
     }
 
