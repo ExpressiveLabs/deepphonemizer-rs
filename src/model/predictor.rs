@@ -132,8 +132,10 @@
 //         return Predictor(model=model, preprocessor=preprocessor)
 
 
+use core::panic;
 use std::collections::HashMap;
 use std::collections::HashSet;
+use anyhow::Result;
 
 use tch::{CModule, Tensor, Device, Kind};
 
@@ -165,13 +167,13 @@ impl Predictor {
         }
     }
 
-    pub fn predict(&self, words: Vec<String>, lang: String, batch_size: usize) -> Vec<Prediction> {
+    pub fn predict(&self, words: Vec<String>, lang: String, batch_size: usize) -> Result<Vec<Prediction>> {
         let mut predictions: HashMap<String, (Vec<i64>, Vec<f32>)> = HashMap::new();
         let mut valid_texts: HashSet<String> = HashSet::new();
 
         for word in words {
-            let input = self.text_tokenizer.preprocess(word.clone());
-            let decoded = self.text_tokenizer.decode(input.clone(), true);
+            let input = self.text_tokenizer.call(&[word], &lang)?;
+            let decoded = self.text_tokenizer.decode(&input.clone(), true)?;
             if decoded.len() == 0 {
                 predictions.insert(word.clone(), (vec![], vec![]));
             } else {
@@ -197,10 +199,11 @@ impl Predictor {
             });
         }
 
-        output
+        Ok(output)
     }
 
     fn predict_batch(&self, texts: Vec<String>, batch_size: usize, language: String) -> HashMap<String, (Vec<i64>, Vec<f32>)> {
+        
         let mut predictions: HashMap<String, (Vec<i32>, Vec<f32>)> = HashMap::new();
         let text_batches = batchify(texts, batch_size);
         for text_batch in text_batches {

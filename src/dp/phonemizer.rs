@@ -4,6 +4,7 @@ use crate::model::predictor::{Prediction, Predictor};
 use std::path::Path;
 use tch::{Device, CModule, TchError};
 use serde::{Deserialize, Serialize};
+use anyhow::Result;
 use std::fs::File;
 use std::io::Read;
 
@@ -265,19 +266,19 @@ impl Phonemizer {
         config_path: &Path,
         device: Device,
         lang_phoneme_dict: HashMap<String, HashMap<String, String>>,
-    ) -> Result<Self, TchError> {
+    ) -> Result<Self> {
         // Load model
         let model = CModule::load_on_device(model_path, device)?;
 
         // Load config file and read to string
         let cfg_content = {
-            let mut cfg_file = File::open(config_path).expect("Unable to open file");
+            let mut cfg_file = File::open(config_path)?;
             let mut content = String::new();
-            cfg_file.read_to_string(&mut content).expect("Unable to read file");
+            cfg_file.read_to_string(&mut content)?;
             content
         };
         // Parse YAML string
-        let config: PhonemizerConfig = serde_json::from_str(&cfg_content).expect("Unable to parse YAML");
+        let config: PhonemizerConfig = serde_json::from_str(&cfg_content)?;
 
         let applied_phoneme_dict = if !lang_phoneme_dict.is_empty() {
             lang_phoneme_dict
