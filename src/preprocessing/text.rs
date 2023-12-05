@@ -125,6 +125,7 @@ impl SequenceTokenizer {
 
     pub fn decode(&self, sequence: &Vec<usize>, remove_special_tokens: bool) -> Result<Vec<String>> {
         
+        // Remove duplicates from sequence
         let unspliced_sequence: Vec<usize> = if self.append_start_end {
             sequence.splice(1..sequence.len() - 1, sequence[1..].iter().step_by(self.char_repeats).cloned()).collect()
         } else {
@@ -134,9 +135,9 @@ impl SequenceTokenizer {
         let decoded: Vec<String> = unspliced_sequence
             .iter()
             .filter_map(|&t| {
-                self.idx_to_token.get(&t).map(|tok| tok.clone())
+                self.idx_to_token.get(&t).map(|tok| tok.clone()) // Get token from index, if it exists in idx_to_token
             })
-            .filter(|t| !remove_special_tokens || !self.special_tokens.contains(t))
+            .filter(|t| !remove_special_tokens || !self.special_tokens.contains(t)) // Filter out special tokens if remove_special_tokens is true
             .collect();
         Ok(decoded)
     }
@@ -171,19 +172,23 @@ impl Preprocessor {
     }
 
     pub fn from_config(config: PhonemizerConfig) -> Preprocessor {
-        let lang_tokenizer = LanguageTokenizer(config.lang_symbols);
-        let text_tokenizer = SequenceTokenizer(symbols=config.text_symbols,
-                                           languages=config.lang_symbols,
-                                           char_repeats=config.char_repeats,
-                                           lowercase=config.lowercase,
-                                           append_start_end=True);
-        let phoneme_tokenizer = SequenceTokenizer(config.phoneme_symbols,
-                                              languages=config.lang_symbols,
-                                              lowercase=False,
-                                              char_repeats=1,
-                                              append_start_end=True);
-        Preprocessor(lang_tokenizer=lang_tokenizer,
-                            text_tokenizer=text_tokenizer,
-                            phoneme_tokenizer=phoneme_tokenizer)
+        let lang_tokenizer = LanguageTokenizer::new(config.lang_symbols);
+        let text_tokenizer = SequenceTokenizer::new(config.text_symbols,
+                                                            config.lang_symbols,
+                                                         config.char_repeats.try_into().unwrap(),
+                                                                       config.lowercase,
+                                                     true,
+                                                            "<pad>".to_string(),
+                                                            "<end>".to_string());
+        let phoneme_tokenizer = SequenceTokenizer::new(config.phoneme_symbols,
+                                                               config.lang_symbols,
+                                                            1,
+                                                               false,
+                                                        true,
+                                                               "<pad>".to_string(),
+                                                               "<end>".to_string());
+        Preprocessor::new(lang_tokenizer,
+                          text_tokenizer,
+                          phoneme_tokenizer)
     }
 }
