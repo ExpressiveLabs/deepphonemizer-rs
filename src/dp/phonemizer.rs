@@ -1,6 +1,5 @@
 use std::collections::{HashMap, HashSet};
 
-use crate::model::model::load_checkpoint;
 use crate::model::predictor::{Prediction, Predictor};
 use std::path::Path;
 use tch::{Device, CModule, TchError};
@@ -216,11 +215,11 @@ impl Phonemizer {
         })
     }
 
-    fn expand_acronym(word: String, expand_acronyms: bool) -> String {
+    fn expand_acronym(&self, word: String, expand_acronyms: bool) -> String {
         if !expand_acronyms {
             return word;
         }
-    
+
         let expanded: String = word
             .split('-')
             .flat_map(|subword| {
