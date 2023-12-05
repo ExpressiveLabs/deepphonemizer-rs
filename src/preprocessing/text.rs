@@ -123,28 +123,28 @@ impl SequenceTokenizer {
         Ok(sequence)
     }
 
-    pub fn decode(&self, sequence: &mut Vec<usize>) -> Result<Vec<String>> {
-        let mut newsequence = sequence.clone();
+    pub fn decode(&self, sequence: &Vec<usize>, remove_special_tokens: bool) -> Result<Vec<String>> {
         
-        if self.append_start_end {
-            sequence.splice(1..sequence.len() - 1, sequence[1..].iter().step_by(self.char_repeats).cloned());
-        }
-        else {
-            sequence = &mut sequence.iter().step_by(self.char_repeats).cloned().collect();
-        }
-        
-        let decoded: Vec<String> = sequence
+        let unspliced_sequence: Vec<usize> = if self.append_start_end {
+            sequence.splice(1..sequence.len() - 1, sequence[1..].iter().step_by(self.char_repeats).cloned()).collect()
+        } else {
+            sequence.iter().step_by(self.char_repeats).cloned().collect()
+        };
+
+        let decoded: Vec<String> = unspliced_sequence
             .iter()
-            .filter_map(|t| {
-                let t = *t;
-                if self.idx_to_token.contains_key(&t) {
-                    Some(self.idx_to_token[&t].clone())
-                } else {
-                    None
-                }
-            })
+            .filter_map(|&t| self.idx_to_token.get(&t).map(|tok| tok.clone()))
             .collect();
-        Ok(sentence)
+
+        let decoded = if remove_special_tokens {
+            decoded
+                .into_iter()
+                .filter(|t| !self.special_tokens.contains(t))
+                .collect()
+        } else {
+            decoded
+        };
+        Ok(decoded)
     }
 
     fn get_start_index(&self, lang: String) -> usize {
