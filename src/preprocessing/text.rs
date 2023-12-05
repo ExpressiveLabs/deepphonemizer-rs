@@ -133,17 +133,11 @@ impl SequenceTokenizer {
 
         let decoded: Vec<String> = unspliced_sequence
             .iter()
-            .filter_map(|&t| self.idx_to_token.get(&t).map(|tok| tok.clone()))
+            .filter_map(|&t| {
+                self.idx_to_token.get(&t).map(|tok| tok.clone())
+            })
+            .filter(|t| !remove_special_tokens || !self.special_tokens.contains(t))
             .collect();
-
-        let decoded = if remove_special_tokens {
-            decoded
-                .into_iter()
-                .filter(|t| !self.special_tokens.contains(t))
-                .collect()
-        } else {
-            decoded
-        };
         Ok(decoded)
     }
 
