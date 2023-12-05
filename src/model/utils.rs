@@ -108,7 +108,7 @@ pub fn _make_len_mask(inp: &mut Tensor) -> Result<Tensor> {
     Ok((inp.f_eq_(0)?).transpose(0, 1))
 }
 
-pub fn _get_len_util_stop(sequence: &Tensor, end_index: usize) -> usize {
+pub fn get_len_util_stop(sequence: &Tensor, end_index: usize) -> usize {
     for (i, val) in sequence.iter().unwrap().enumerate() {
         if val == end_index {
             return i + 1

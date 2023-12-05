@@ -2,7 +2,7 @@ use std::collections::{HashMap, HashSet};
 
 use crate::model::predictor::{Prediction, Predictor};
 use std::path::Path;
-use tch::{Device, CModule, TchError};
+use tch::{Device, CModule};
 use serde::{Deserialize, Serialize};
 use anyhow::Result;
 use std::fs::File;
@@ -290,7 +290,7 @@ impl Phonemizer {
             }
         };
         let preprocessor = crate::preprocessing::text::Preprocessor::from_config(config);
-        let predictor = Predictor::new(model, preprocessor);
+        let predictor = Predictor::new(model, preprocessor, device);
         Ok(Phonemizer::new(predictor, applied_phoneme_dict))
     }
 }

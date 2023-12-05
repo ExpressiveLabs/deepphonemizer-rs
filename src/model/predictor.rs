@@ -141,6 +141,8 @@ use tch::{CModule, Tensor, Device, Kind};
 
 use crate::preprocessing::text::{Preprocessor, SequenceTokenizer};
 use crate::preprocessing::util::batchify;
+use crate::model::utils::get_len_util_stop;
+
 
 
 #[derive(Debug, Clone)]
@@ -151,20 +153,22 @@ pub struct Prediction {
 }
 
 /// Performs model predictions on a batch of inputs
-pub struct Predictor {
+pub struct PredictorClass {
     model: CModule,
     text_tokenizer: SequenceTokenizer,
     phoneme_tokenizer: SequenceTokenizer,
+    device: Device,
 }
 
-impl Predictor {
-    pub fn new(model: CModule, preprocessor: Preprocessor) -> Self {
+impl PredictorClass {
+    pub fn new(model: CModule, preprocessor: Preprocessor, device: Device) -> Self {
         let text_tokenizer = preprocessor.text_tokenizer;
         let phoneme_tokenizer = preprocessor.phoneme_tokenizer;
         Self {
             model,
             text_tokenizer,
             phoneme_tokenizer,
+            device
         }
     }
 
@@ -203,39 +207,50 @@ impl Predictor {
         Ok(output)
     }
 
-    fn predict_batch(&self, texts: Vec<String>, batch_size: usize, language: String) -> HashMap<String, (Vec<i64>, Vec<f32>)> {
+    fn predict_batch(&self, texts: Vec<String>, batch_size: usize, language: String) -> Result<HashMap<String, (Vec<i64>, Vec<f32>)>> {
         
         let mut predictions: HashMap<String, (Vec<i32>, Vec<f32>)> = HashMap::new();
         let text_batches = batchify(texts, batch_size);
+
         for text_batch in text_batches {
             let mut input_batch: Vec<Tensor> = vec![];
             let mut lens_batch: Vec<Tensor> = vec![];
             for text in text_batch {
-                let input = self.text_tokenizer.preprocess(text.clone());
-                input_batch.push(Tensor::of_slice(&input));
-                lens_batch.push(Tensor::of_slice(&[input.len() as i32]));
+                let input = self.text_tokenizer.call(&[text], &language)?;
+                // I'm not very happy about this type conversion situation :/
+                let i64input: Vec<i64> = input.iter().cloned().map(|x| x as i64).collect();
+                input_batch.push(Tensor::from_slice(&i64input.as_slice()));
+                lens_batch.push(Tensor::from_slice(&[input.len() as i32]));
             }
 
-            let input_batch = Tensor::stack(&input_batch, 0);
-            let lens_batch = Tensor::stack(&lens_batch, 0);
-            let start_indx = self.phoneme_tokenizer.get_start_index(language.clone());
-            let start_inds = Tensor::of_slice(&vec![start_indx; input_batch.size()[0]]).to(input_batch.device());
-            let batch = [
-                ("text", input_batch),
-                ("text_len", lens_batch),
-                ("start_index", start_inds),
-            ];
+            let input_batch = Tensor::pad_sequence(&input_batch, true, 0.0).to(self.device);
+            let lens_batch = Tensor::stack(&lens_batch, 0).to(self.device);
+            let start_indx = self.phoneme_tokenizer.get_start_index(&language) as i64;
+            let start_inds = Tensor::from_slice(&vec![start_indx; input_batch.size()[0].try_into().unwrap()]).to(self.device);
+            let mut batch = HashMap::new()
+            batch.insert("text", input_batch);
+            batch.insert("text_len", lens_batch);
+            batch.insert("start_index", start_inds);
+            // [
+            //     ("text", input_batch),
+            //     ("text_len", lens_batch),
+            //     ("start_index", start_inds),
+            // ];
             let output_batch = self.model.forward_ts(&batch).unwrap();
+            let probs_batch = output_batch.get(1);
             let output_batch = output_batch.get(0);
-            let probs_batch = self.model.forward_ts(&batch).unwrap();
-            let probs_batch = probs_batch.get(1);
+
+            // Don't think this second call is needed, but will keep it commented untill tested
+            // let probs_batch = self.model.forward_ts(&batch).unwrap();
+            // let probs_batch = probs_batch.get(1);
+
             for (text, output, probs) in text_batch.iter().zip(output_batch.iter().zip(probs_batch.iter())) {
                 let seq_len = get_len_util_stop(output, self.phoneme_tokenizer.end_index);
                 predictions.insert(text.clone(), (output.get(0..seq_len).to_kind(Kind::Int64).to_vec(), probs.get(0..seq_len).to_kind(Kind::Float).to_vec()));
             }
         }
 
-        predictions
+        Ok(predictions)
     }
 
     pub fn from_checkpoint(checkpoint_path: String, device: Device) -> Predictor {

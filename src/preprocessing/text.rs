@@ -49,7 +49,7 @@ pub struct SequenceTokenizer {
     token_to_idx: HashMap<String, usize>,
     idx_to_token: HashMap<usize, String>,
     special_tokens: HashSet<String>,
-    end_index: usize,
+    pub end_index: usize,
     vocab_size: usize,
 }
 
@@ -65,7 +65,7 @@ impl SequenceTokenizer {
         special_tokens.insert(end_token.clone());
 
         for lang in &languages {
-            let lang_token = Self::make_start_token(lang.clone()); // PANIEK
+            let lang_token = Self::make_start_token(&lang); // PANIEK
             token_to_idx.insert(lang_token.clone(), token_to_idx.len());
             special_tokens.insert(lang_token.clone());
         }
@@ -114,7 +114,7 @@ impl SequenceTokenizer {
             .collect();
     
         let sequence = if self.append_start_end {
-            let lang_token = self.get_start_index(lang.to_string());
+            let lang_token = self.get_start_index(lang);
             [vec![lang_token], sequence, vec![self.end_index]].concat()
         } else {
             sequence
@@ -142,12 +142,12 @@ impl SequenceTokenizer {
         Ok(decoded)
     }
 
-    fn get_start_index(&self, lang: String) -> usize {
+    pub fn get_start_index(&self, lang: &str) -> usize {
         let lang_token = Self::make_start_token(lang);
         self.token_to_idx[&lang_token]
     }
 
-    fn make_start_token(lang: String) -> String {
+    fn make_start_token(lang: &str) -> String {
         format!("<{}>", lang)
     }
 }
