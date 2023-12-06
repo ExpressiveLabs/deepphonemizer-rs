@@ -345,19 +345,19 @@
 //     }
 // }
 
-use std::path::Path;
-use tch::{Device, CModule};
+// use std::path::Path;
+// use tch::{Device, CModule};
 
-// Initializes a model from a checkpoint (.pt file).
+// // Initializes a model from a checkpoint (.pt file).
 
-// Args:
-//     checkpoint_path (str): Path to checkpoint file (.pt).
-//     device (str): Device to put the model to ('cpu' or 'cuda').
+// // Args:
+// //     checkpoint_path (str): Path to checkpoint file (.pt).
+// //     device (str): Device to put the model to ('cpu' or 'cuda').
 
-// Returns: Tuple: The first element is a Model (the loaded model)
-//          and the second element is a dictionary (config).
-pub fn load_checkpoint(model_path: &Path, config_path: &Path, device: Device) -> (Model, Map<str, Any>) {
+// // Returns: Tuple: The first element is a Model (the loaded model)
+// //          and the second element is a dictionary (config).
+// pub fn load_checkpoint(model_path: &Path, config_path: &Path, device: Device) -> (Model, Map<str, Any>) {
 
-    let model = CModule::load_on_device(model_path, device)?;
+//     let model = CModule::load_on_device(model_path, device)?;
 
-}
+// }

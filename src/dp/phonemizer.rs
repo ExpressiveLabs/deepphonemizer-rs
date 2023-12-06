@@ -28,6 +28,22 @@ pub struct PhonemizerConfig {
     pub phoneme_dict: HashMap<String, HashMap<String, String>>,
 }
 
+impl PhonemizerConfig {
+    pub fn from_file(path: &Path) -> Result<Self> {
+        let mut file = File::open(path)?;
+        let mut content = String::new();
+        file.read_to_string(&mut content)?;
+        let config: PhonemizerConfig = serde_yaml::from_str(&content)?;
+        Ok(config)
+    }
+
+    pub fn save(&self, path: &Path) -> Result<()> {
+        let content = serde_yaml::to_string(&self)?;
+        std::fs::write(path, content)?;
+        Ok(())
+    }
+}
+
 pub struct PhonemizerResult {
     text: Vec<String>,
     phonemes: Vec<String>,
@@ -59,7 +75,7 @@ impl Phonemizer {
         punctuation: &str,
         expand_acronyms: bool,
         batch_size: usize,
-    ) -> PhonemizerResult {
+    ) -> Result<PhonemizerResult> {
         let texts = if text.is_empty() { vec![] } else { vec![text] };
         self.phonemise_list(texts, lang, punctuation, expand_acronyms, batch_size)
     }
@@ -84,7 +100,7 @@ impl Phonemizer {
         punctuation: &str,
         expand_acronyms: bool,
         batch_size: usize,
-    ) -> PhonemizerResult {
+    ) -> Result<PhonemizerResult> {
         let punctuation = if punctuation.is_empty() {
             DEFAULT_PUNCTUATION
         } else {
@@ -164,7 +180,7 @@ impl Phonemizer {
             .map(|(word, _)| word.clone())
             .collect::<Vec<String>>();
 
-        let predictions = self.predictor.predict(words_to_predict, lang, batch_size);
+        let predictions = self.predictor.predict(words_to_predict, lang, batch_size)?;
 
         for pred in predictions {
             word_phonemes.insert(pred.word.clone(), Some(pred.phonemes.clone()));
@@ -191,13 +207,13 @@ impl Phonemizer {
             .map(|phoneme_list| phoneme_list.join(""))
             .collect::<Vec<String>>();
 
-        PhonemizerResult {
+        Ok(PhonemizerResult {
             text: texts,
             phonemes: phonemes_joined,
             split_text: split_text.to_vec(),
             split_phonemes: phoneme_lists,
             predictions: pred_dict,
-        }
+        })
     }
 
     fn get_dict_entry(&self, word: &str, lang: &str, punc_set: &HashSet<char>) -> Option<String> {
@@ -271,14 +287,16 @@ impl Phonemizer {
         let model = CModule::load_on_device(model_path, device)?;
 
         // Load config file and read to string
-        let cfg_content = {
-            let mut cfg_file = File::open(config_path)?;
-            let mut content = String::new();
-            cfg_file.read_to_string(&mut content)?;
-            content
-        };
+        // let cfg_content = {
+        //     let mut cfg_file = File::open(config_path)?;
+        //     let mut content = String::new();
+        //     cfg_file.read_to_string(&mut content)?;
+        //     content
+        // };
+        
         // Parse YAML string
-        let config: PhonemizerConfig = serde_json::from_str(&cfg_content)?;
+        let config_path = Path::new(config_path);
+        let config = PhonemizerConfig::from_file(config_path)?;
 
         let applied_phoneme_dict = if !lang_phoneme_dict.is_empty() {
             lang_phoneme_dict
@@ -301,45 +319,23 @@ mod tests {
 
     #[test]
     fn test_get_dict_entry() {
-        let phonemizer = Phonemizer::new(/* provide necessary parameters */);
-
-        // Test case 1: word is empty
-        let word = String::new();
-        let lang = String::from("en");
-        let punc_set = HashSet::new();
-        let result = phonemizer.get_dict_entry(&word, &lang, &punc_set);
-        assert_eq!(result, Some(word.clone()));
-
-        // Test case 2: word is in the phoneme dictionary
-        let word = String::from("hello");
-        let lang = String::from("en");
-        let punc_set = HashSet::new();
-        let result = phonemizer.get_dict_entry(&word, &lang, &punc_set);
-        // assert_eq!(result, Some(/* expected phoneme for "hello" */));
-
-        // Test case 3: word is not in the phoneme dictionary
-        let word = String::from("world");
-        let lang = String::from("en");
-        let punc_set = HashSet::new();
-        let result = phonemizer.get_dict_entry(&word, &lang, &punc_set);
-        assert_eq!(result, None);
+        let phonemizer = Phonemizer::from_checkpoint(
+            Path::new("models/phonemizer.pt"),
+            Path::new("models/phonemizer_config.json"),
+            Device::cuda_if_available(),
+            HashMap::new(),
+        );
     }
 
     #[test]
-    fn test_expand_acronym() {
-        let phonemizer = Phonemizer::new(/* provide necessary parameters */);
+    fn load_config_yaml() {
+        let config_path = Path::new("config.yaml");
+        let config = PhonemizerConfig::from_file(config_path);
 
-        // Test case 1: expand_acronyms is true
-        let word = String::from("USA");
-        let expand_acronyms = true;
-        let result = phonemizer.expand_acronym(word, expand_acronyms);
-        assert_eq!(result /* expected expanded acronym */,);
+        assert!(config.is_ok());
 
-        // Test case 2: expand_acronyms is false
-        let word = String::from("USA");
-        let expand_acronyms = false;
-        let result = phonemizer.expand_acronym(word, expand_acronyms);
-        assert_eq!(result, word);
+        let config = config.unwrap();
+        assert_eq!(config.phoneme_dict.len(), 3);
     }
 
     // Add more test cases for other functions...

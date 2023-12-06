@@ -20,14 +20,14 @@ pub struct Prediction {
 }
 
 /// Performs model predictions on a batch of inputs
-pub struct PredictorClass {
+pub struct Predictor {
     model: CModule,
     text_tokenizer: SequenceTokenizer,
     phoneme_tokenizer: SequenceTokenizer,
     device: Device,
 }
 
-impl PredictorClass {
+impl Predictor {
     pub fn new(model: CModule, preprocessor: Preprocessor, device: Device) -> Self {
         let text_tokenizer = preprocessor.text_tokenizer;
         let phoneme_tokenizer = preprocessor.phoneme_tokenizer;
