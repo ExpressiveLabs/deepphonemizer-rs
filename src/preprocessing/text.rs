@@ -1,7 +1,7 @@
 use core::panic;
 use std::collections::{HashMap, HashSet};
 
-use crate::dp::phonemizer::PhonemizerConfig;
+use crate::dp::phonemizer::{PhonemizerConfig, PhonemizerPreprocessingConfig};
 use anyhow::Result;
 
 pub struct LanguageTokenizer {
@@ -33,7 +33,7 @@ impl LanguageTokenizer {
 
     pub fn decode(&self, index: usize) -> Result<String> {
         if self.index_lang.contains_key(&index) {
-            Ok(self.index_lang[&index])
+            Ok(self.index_lang[&index].clone())
         } else {
             panic!("Language not supported")
         }
@@ -136,21 +136,15 @@ impl SequenceTokenizer {
         Ok(sequence)
     }
 
-    pub fn decode(
-        &self,
-        sequence: &Vec<usize>,
-        remove_special_tokens: bool,
-    ) -> Result<Vec<String>> {
+    pub fn decode(&self, sequence: &Vec<usize>, remove_special_tokens: bool) -> Result<Vec<String>> {
+        let mut seq = sequence.clone();
+        let len = sequence.len();
+
         // Remove duplicates from sequence
         let unspliced_sequence: Vec<usize> = if self.append_start_end {
-            sequence
-                .splice(
-                    1..sequence.len() - 1,
-                    sequence[1..].iter().step_by(self.char_repeats).cloned(),
-                )
-                .collect()
+            seq.splice(1..len - 1, sequence[1..].iter().step_by(self.char_repeats).cloned()).collect()
         } else {
-            sequence
+            seq
                 .iter()
                 .step_by(self.char_repeats)
                 .cloned()
@@ -200,11 +194,11 @@ impl Preprocessor {
         text.to_string()
     }
 
-    pub fn from_config(config: PhonemizerConfig) -> Preprocessor {
-        let lang_tokenizer = LanguageTokenizer::new(config.lang_symbols);
+    pub fn from_config(config: PhonemizerPreprocessingConfig) -> Preprocessor {
+        let lang_tokenizer = LanguageTokenizer::new(config.languages.clone());
         let text_tokenizer = SequenceTokenizer::new(
             config.text_symbols,
-            config.lang_symbols,
+            config.languages.clone(),
             config.char_repeats.try_into().unwrap(),
             config.lowercase,
             true,
@@ -213,7 +207,7 @@ impl Preprocessor {
         );
         let phoneme_tokenizer = SequenceTokenizer::new(
             config.phoneme_symbols,
-            config.lang_symbols,
+            config.languages,
             1,
             false,
             true,

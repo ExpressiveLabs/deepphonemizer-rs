@@ -43,8 +43,8 @@ impl Predictor {
         let mut predictions: HashMap<String, (Vec<i64>, Vec<f32>)> = HashMap::new();
         let mut valid_texts: HashSet<String> = HashSet::new();
 
-        for word in words {
-            let input = self.text_tokenizer.call(&[word], &lang)?;
+        for word in words.iter() {
+            let input = self.text_tokenizer.call(&[word.clone()], &lang)?;
             let decoded = self.text_tokenizer.decode(&input.clone(), true)?;
             if decoded.len() == 0 {
                 predictions.insert(word.clone(), (vec![], vec![]));
@@ -60,14 +60,15 @@ impl Predictor {
         predictions.extend(batch_pred);
 
         let mut output: Vec<Prediction> = vec![];
-        for word in words {
-            let (tokens, probs) = predictions.get(&word).unwrap();
+        for word in words.iter() {
+            let (tokens, probs) = predictions.get(word).unwrap();
             // We really need to have a better way of doing this i64 - usize stuff
             let usize_tokens: Vec<usize> = tokens.iter().map(|x| *x as usize).collect();
             let out_phons = self.phoneme_tokenizer.decode(&usize_tokens, true)?;
-            let out_phons_tokens = self.phoneme_tokenizer.decode(&usize_tokens, false)?;
+            let _out_phons_tokens = self.phoneme_tokenizer.decode(&usize_tokens, false)?;
+
             output.push(Prediction {
-                word,
+                word: word.clone(),
                 phonemes: out_phons.join(""),
                 probability: probs.iter().product(),
             });
@@ -108,12 +109,12 @@ impl Predictor {
             let start_indx = self.phoneme_tokenizer.get_start_index(&language) as i64;
             let start_inds = Tensor::from_slice(&vec![start_indx; input_batch.size()[0].try_into().unwrap()]).to(self.device);
             
-            let batch: HashMap<&str, Tensor> = [
+            let batch: HashMap<&str, Tensor> = vec![
                 ("text", input_batch),
                 ("text_len", lens_batch),
                 ("start_index", start_inds),
-            ].iter()
-            .map(|(key, value)| (key.as_ref(), value.clone(value)))
+            ].into_iter()
+            .map(|(key, value)| (key.as_ref(), value.clone(&value)))
             .collect();
 
             // Create batch dictionary, for input

@@ -20,12 +20,31 @@ pub fn to_title_case(word: &str) -> String {
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct PhonemizerConfig {
+    pub preprocessing: PhonemizerPreprocessingConfig,
+    pub model: PhonemizerModelConfig,
+    pub paths: HashMap<String, String>
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct PhonemizerPreprocessingConfig {
     pub text_symbols: Vec<String>,
     pub phoneme_symbols: Vec<String>,
-    pub lang_symbols: Vec<String>,
+    pub languages: Vec<String>,
     pub char_repeats: isize,
     pub lowercase: bool,
-    pub phoneme_dict: HashMap<String, HashMap<String, String>>,
+    pub phoneme_dict: Option<HashMap<String, HashMap<String, String>>>,
+    pub n_val: usize,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct PhonemizerModelConfig {
+    pub d_fft: usize,
+    pub d_model: usize,
+    pub dropout: f64,
+    pub heads: usize,
+    pub layers: usize,
+    #[serde(rename = "type")]
+    pub kind: String,
 }
 
 impl PhonemizerConfig {
@@ -44,6 +63,7 @@ impl PhonemizerConfig {
     }
 }
 
+#[derive(Debug, Clone)]
 pub struct PhonemizerResult {
     text: Vec<String>,
     phonemes: Vec<String>,
@@ -54,13 +74,13 @@ pub struct PhonemizerResult {
 
 pub struct Phonemizer {
     predictor: Predictor,
-    lang_phoneme_dict: HashMap<String, HashMap<String, String>>,
+    lang_phoneme_dict: Option<HashMap<String, HashMap<String, String>>>,
 }
 
 impl Phonemizer {
     pub fn new(
         predictor: Predictor,
-        lang_phoneme_dict: HashMap<String, HashMap<String, String>>,
+        lang_phoneme_dict: Option<HashMap<String, HashMap<String, String>>>,
     ) -> Self {
         Self {
             predictor,
@@ -110,10 +130,10 @@ impl Phonemizer {
         let punc_pattern = format!("[{}]", punctuation).to_string(); // Get punctuation pattern ex. "[;,]" idk either
 
         let mut cleaned_words = HashSet::new();
-        let mut split_text = &vec![];
+        let mut split_text = vec![];
 
         // Go through text and
-        for text in texts {
+        for text in texts.iter() {
             let cleaned_text = text
                 .chars()
                 .filter(|t| t.is_alphanumeric() || punc_set.contains(t))
@@ -152,7 +172,10 @@ impl Phonemizer {
         for word in words_to_split {
             let key = word.clone();
             let word = self.expand_acronym(word, expand_acronyms);
-            let word_split = word.split("-").collect::<Vec<&str>>();
+
+            let word_split = word.split("-");
+            let word_split = word_split.map(|x| x.to_string()).collect::<Vec<String>>();
+
             word_splits.insert(key, word_split);
         }
 
@@ -182,14 +205,14 @@ impl Phonemizer {
 
         let predictions = self.predictor.predict(words_to_predict, lang, batch_size)?;
 
-        for pred in predictions {
+        for pred in predictions.iter() {
             word_phonemes.insert(pred.word.clone(), Some(pred.phonemes.clone()));
         }
 
         let mut pred_dict = HashMap::new();
 
-        for pred in predictions {
-            pred_dict.insert(pred.word.clone(), pred);
+        for pred in predictions.iter() {
+            pred_dict.insert(pred.word.clone(), pred.clone());
         }
 
         // collect all phonemes
@@ -217,11 +240,17 @@ impl Phonemizer {
     }
 
     fn get_dict_entry(&self, word: &str, lang: &str, punc_set: &HashSet<char>) -> Option<String> {
+        if self.lang_phoneme_dict.is_none() {
+            return None;
+        }
+
         if punc_set.contains(&word.chars().next().unwrap()) || word.is_empty() {
             return Some(word.to_owned());
         }
+
+        let lpd = self.lang_phoneme_dict.as_ref().unwrap();
     
-        self.lang_phoneme_dict.get(lang).and_then(|phoneme_dict| {
+        lpd.get(lang).and_then(|phoneme_dict| {
             let lowercase_word = word.to_lowercase();
             let title_case_word = to_title_case(&word);
     
@@ -237,24 +266,27 @@ impl Phonemizer {
             return word;
         }
 
-        let expanded: String = word
-            .split('-')
-            .flat_map(|subword| {
-                let mut subword_chars = subword.chars();
-                let mut result = String::new();
-    
-                if let Some(first_char) = subword_chars.next() {
-                    result.push(first_char);
-                    for (a, b) in subword_chars.clone().zip(subword_chars) {
-                        result.push(a);
-                        if b.is_uppercase() {
-                            result.push('-');
-                        }
-                    }
-                }
-                result.chars()
-            })
-            .collect();
+        // let expanded: String = word
+        //     .split('-')
+        //     .flat_map(|subword| {
+        //         let mut subword_chars = subword.chars();
+        //         let mut result = String::new();
+        //
+        //         if let Some(first_char) = subword_chars.next() {
+        //             result.push(first_char);
+        //             for (a, b) in subword_chars.clone().zip(subword_chars) {
+        //                 result.push(a);
+        //                 if b.is_uppercase() {
+        //                     result.push('-');
+        //                 }
+        //             }
+        //         }
+        //         result.chars().clone()
+        //     })
+        //     .collect();
+
+        let expanded = word.replace("-", " ");
+
         expanded
     }
 
@@ -281,7 +313,7 @@ impl Phonemizer {
         model_path: &Path,
         config_path: &Path,
         device: Device,
-        lang_phoneme_dict: HashMap<String, HashMap<String, String>>,
+        lang_phoneme_dict: Option<HashMap<String, HashMap<String, String>>>,
     ) -> Result<Self> {
         // Load model
         let model = CModule::load_on_device(model_path, device)?;
@@ -298,16 +330,12 @@ impl Phonemizer {
         let config_path = Path::new(config_path);
         let config = PhonemizerConfig::from_file(config_path)?;
 
-        let applied_phoneme_dict = if !lang_phoneme_dict.is_empty() {
+        let applied_phoneme_dict = if lang_phoneme_dict.is_some() {
             lang_phoneme_dict
         } else {
-            if config.phoneme_dict.is_empty() {
-                panic!("Empty phoneme dictionary provided");
-            } else {
-                config.phoneme_dict.clone()
-            }
+            config.preprocessing.phoneme_dict.clone()
         };
-        let preprocessor = crate::preprocessing::text::Preprocessor::from_config(config);
+        let preprocessor = crate::preprocessing::text::Preprocessor::from_config(config.preprocessing);
         let predictor = Predictor::new(model, preprocessor, device);
         Ok(Phonemizer::new(predictor, applied_phoneme_dict))
     }
@@ -318,24 +346,29 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_get_dict_entry() {
+    fn test_full_run() {
         let phonemizer = Phonemizer::from_checkpoint(
-            Path::new("models/phonemizer.pt"),
-            Path::new("models/phonemizer_config.json"),
+            Path::new("models/en_us.pt"),
+            Path::new("models/config.yaml"),
             Device::cuda_if_available(),
-            HashMap::new(),
+            None,
         );
+
+        let phrase = "I am a worm and my name is Ben, isn't it fantastic?".to_string();
+        let result = phonemizer.unwrap().call(phrase, "en_us".to_string(), "", false, 1).unwrap();
+
+        println!("{:?}", result);
     }
 
     #[test]
     fn load_config_yaml() {
         let config_path = Path::new("config.yaml");
-        let config = PhonemizerConfig::from_file(config_path);
+        let config = PhonemizerConfig::from_file(config_path).unwrap();
 
-        assert!(config.is_ok());
+        // assert!(config.is_ok());
 
-        let config = config.unwrap();
-        assert_eq!(config.phoneme_dict.len(), 3);
+        // let config = config.unwrap();
+        assert_eq!(config.preprocessing.languages.len(), 7);
     }
 
     // Add more test cases for other functions...

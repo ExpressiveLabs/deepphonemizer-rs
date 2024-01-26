@@ -1,8 +1,9 @@
 use std::fmt::{Debug, Formatter};
 use tch::nn::Module;
 
-use tch::nn::Func as F;
+// use tch::nn::Func as F;
 
+#[allow(dead_code)]
 pub struct Dropout {
     p: f64,
     train: bool,
@@ -33,6 +34,7 @@ impl Dropout {
             train: true,
         }
     }
+
     fn train(&mut self, mode: bool) {
         self.train = mode;
     }
