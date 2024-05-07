@@ -1,11 +1,11 @@
 # DeepPhonemizer in Rust
-This repository contains a Rust implementation of the inferencing engine from [DeepPhonemizer](https://github.com/as-ideas/DeepPhonemizer) using the `tch` crate and the TorchScript JIT functionality.
+This repository contains a pure Rust implementation of the inferencing engine from [DeepPhonemizer](https://github.com/as-ideas/DeepPhonemizer) using the `tch` crate and the TorchScript JIT functionality.
 
 ## Usage
 To use the crate, add the following to your `Cargo.toml`:
 ```toml
 [dependencies]
-deepphonemizer-rs = "0.1.0"
+deepphonemizer-rs = "1.0.0"
 ```
 
 Then, you can use the crate as follows:
