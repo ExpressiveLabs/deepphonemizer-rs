@@ -1,4 +1,6 @@
 /target
-/Cargo.lock
 /models
+/configs
+/dict
 .idea
+.env

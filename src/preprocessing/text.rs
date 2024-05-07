@@ -1,7 +1,7 @@
 use core::panic;
 use std::collections::{HashMap, HashSet};
 
-use crate::dp::phonemizer::{PhonemizerConfig, PhonemizerPreprocessingConfig};
+use crate::dp::phonemizer::PhonemizerPreprocessingConfig;
 use anyhow::Result;
 
 pub struct LanguageTokenizer {
@@ -40,17 +40,16 @@ impl LanguageTokenizer {
     }
 }
 
+#[derive(Debug, Default)]
 pub struct SequenceTokenizer {
     languages: Vec<String>,
     char_repeats: usize,
     lowercase: bool,
     append_start_end: bool,
-    pad_index: usize,
     token_to_idx: HashMap<String, usize>,
     idx_to_token: HashMap<usize, String>,
     special_tokens: HashSet<String>,
     pub end_index: usize,
-    vocab_size: usize,
 }
 
 impl SequenceTokenizer {
@@ -73,7 +72,7 @@ impl SequenceTokenizer {
         special_tokens.insert(end_token.clone());
 
         for lang in &languages {
-            let lang_token = Self::make_start_token(&lang); // PANIEK
+            let lang_token = Self::make_start_token(lang);
             token_to_idx.insert(lang_token.clone(), token_to_idx.len());
             special_tokens.insert(lang_token.clone());
         }
@@ -85,45 +84,45 @@ impl SequenceTokenizer {
         }
         let idx_to_token = token_to_idx
             .iter()
-            .map(|(k, v)| (v.clone(), k.clone()))
+            .map(|(k, v)| (*v, k.clone()))
             .collect();
-        let vocab_size = token_to_idx.len();
 
         Self {
             languages,
             char_repeats,
             lowercase,
             append_start_end,
-            pad_index,
             token_to_idx,
             idx_to_token,
             special_tokens,
             end_index,
-            vocab_size,
         }
     }
 
-    pub fn call(&self, sentence: &[String], lang: &str) -> Result<Vec<usize>> {
+    pub fn call(&self, sentence: &str, lang: &str) -> Result<Vec<usize>> {
+        // Check if the language exists
         if !self.languages.contains(&lang.to_string()) {
             return Err(anyhow::Error::msg("Language not supported"));
         }
 
-        let mut newsentence: Vec<&String> = Vec::new();
-        for item in sentence {
+        let data = sentence.chars().map(|x| x.to_string()).collect::<Vec<String>>();
+
+        // Push char_repeats copies of each word into sentence
+        let mut _sentence: Vec<String> = Vec::new();
+        for item in data.iter() {
             for _ in 0..self.char_repeats {
-                newsentence.push(item);
+                _sentence.push(item.clone());
             }
         }
 
+        // Make everything lowercase
         if self.lowercase {
-            newsentence.iter_mut().for_each(|x| {
-                x.to_lowercase();
-            });
+            _sentence = _sentence.iter().map(|x| x.to_lowercase()).collect();
         }
 
-        let sequence: Vec<usize> = newsentence
+        let sequence: Vec<usize> = _sentence
             .iter()
-            .filter_map(|&c| self.token_to_idx.get(c).cloned())
+            .filter_map(|c| self.token_to_idx.get(c).cloned())
             .collect();
 
         let sequence = if self.append_start_end {
@@ -144,17 +143,13 @@ impl SequenceTokenizer {
         let unspliced_sequence: Vec<usize> = if self.append_start_end {
             seq.splice(1..len - 1, sequence[1..].iter().step_by(self.char_repeats).cloned()).collect()
         } else {
-            seq
-                .iter()
-                .step_by(self.char_repeats)
-                .cloned()
-                .collect()
+            seq.iter().step_by(self.char_repeats).cloned().collect()
         };
 
         let decoded: Vec<String> = unspliced_sequence
             .iter()
             .filter_map(|&t| {
-                self.idx_to_token.get(&t).map(|tok| tok.clone()) // Get token from index, if it exists in idx_to_token
+                self.idx_to_token.get(&t).cloned() // Get token from index, if it exists in idx_to_token
             })
             .filter(|t| !remove_special_tokens || !self.special_tokens.contains(t)) // Filter out special tokens if remove_special_tokens is true
             .collect();
@@ -254,23 +249,23 @@ mod tests {
             "<end>".to_string(),
         );
         assert_eq!(
-            sequence_tokenizer.call(&vec!["a".to_string()], "en").unwrap(),
+            sequence_tokenizer.call("a", "en").unwrap(),
             vec![0, 1, 2, 3, 4]
         );
         assert_eq!(
-            sequence_tokenizer.call(&vec!["a".to_string()], "de").unwrap(),
+            sequence_tokenizer.call("a", "de").unwrap(),
             vec![5, 1, 2, 3, 4]
         );
         assert_eq!(
-            sequence_tokenizer.call(&vec!["a".to_string()], "fr").unwrap_err().to_string(),
+            sequence_tokenizer.call("a", "fr").unwrap_err().to_string(),
             "Language not supported"
         );
         assert_eq!(
-            sequence_tokenizer.call(&vec!["a".to_string()], "en").unwrap(),
+            sequence_tokenizer.call("a", "en").unwrap(),
             vec![0, 1, 2, 3, 4]
         );
         assert_eq!(
-            sequence_tokenizer.call(&vec!["a".to_string()], "de").unwrap(),
+            sequence_tokenizer.call("a", "de").unwrap(),
             vec![5, 1, 2, 3, 4]
         );
     }

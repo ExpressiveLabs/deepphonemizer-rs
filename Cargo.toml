@@ -1,7 +1,12 @@
 [package]
-name = "deepphonemizer-rs"
-version = "0.1.0"
+name = "deepphonemizer"
+version = "1.0.0"
 edition = "2021"
+license = "MIT"
+keywords = ["g2p", "linguistics", "phonemizer", "deepphonemizer"]
+authors = ["Layetri <daniel@expressivelabs.net>", "Wouter Besse <wouter.besse@expressivelabs.net>"]
+description = "A Rust implementation of the DeepPhonemizer G2P model (inference only)."
+repository = "https://github.com/ExpressiveLabs/deepphonemizer-rs"
 
 [dependencies]
 tch = {version = "0.14.0", features = ["download-libtorch"]}
@@ -10,3 +15,5 @@ serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 serde_yaml = "0.9.27"
 itertools = "0.8"
+serde-pickle = "1.1.1"
+dotenv = "0.15.0"
