@@ -5,7 +5,7 @@ This repository contains a pure Rust implementation of the inferencing engine fr
 To use the crate, add the following to your `Cargo.toml`:
 ```toml
 [dependencies]
-deepphonemizer-rs = "1.0.0"
+deepphonemizer = "1.0.0"
 ```
 
 Then, you can use the crate as follows:
