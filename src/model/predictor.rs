@@ -1,16 +1,16 @@
+use anyhow::Result;
 use std::collections::HashMap;
 use std::collections::HashSet;
 use std::fmt::{Debug, Formatter};
 use std::path::Path;
-use anyhow::Result;
 
 use itertools::izip;
-use tch::{CModule, Tensor, Device, Kind};
 use tch::jit::IValue;
+use tch::{CModule, Device, Kind, Tensor};
 
+use crate::model::utils::get_len_util_stop;
 use crate::preprocessing::text::{Preprocessor, SequenceTokenizer};
 use crate::preprocessing::util::batchify;
-use crate::model::utils::get_len_util_stop;
 
 type BatchPrediction = HashMap<String, (Vec<i64>, Vec<f32>)>;
 
@@ -41,7 +41,11 @@ impl Debug for Predictor {
 }
 
 impl Predictor {
-    pub fn new<P: AsRef<Path>>(model_path: P, preprocessor: Preprocessor, device: Device) -> Result<Self> {
+    pub fn new<P: AsRef<Path>>(
+        model_path: P,
+        preprocessor: Preprocessor,
+        device: Device,
+    ) -> Result<Self> {
         // Load model
         let model = CModule::load_on_device(model_path, device)?;
         let text_tokenizer = preprocessor.text_tokenizer;
@@ -51,14 +55,19 @@ impl Predictor {
             model,
             text_tokenizer,
             phoneme_tokenizer,
-            device
+            device,
         })
     }
 
-    pub fn predict(&self, words: Vec<String>, lang: String, batch_size: usize) -> Result<Vec<Prediction>> {
+    pub fn predict(
+        &self,
+        words: Vec<String>,
+        lang: String,
+        batch_size: usize,
+    ) -> Result<Vec<Prediction>> {
         let mut predictions: HashMap<String, (Vec<i64>, Vec<f32>)> = HashMap::new();
         let mut valid_texts: HashSet<String> = HashSet::new();
-        
+
         for word in words.iter() {
             let input = self.text_tokenizer.call(word, &lang)?;
             let decoded = self.text_tokenizer.decode(&input.clone(), true)?;
@@ -75,7 +84,7 @@ impl Predictor {
 
         let batch_pred = self.predict_batch(valid_texts, batch_size, lang.clone())?;
         predictions.extend(batch_pred);
-        
+
         let mut output: Vec<Prediction> = vec![];
         for word in words.iter() {
             let (tokens, probs) = predictions.get(word).unwrap();
@@ -94,7 +103,11 @@ impl Predictor {
         Ok(output)
     }
 
-    fn process_text_batch(&self, text_batch: &[String], language: &str) -> Result<(Vec<Tensor>, Vec<Tensor>)> {
+    fn process_text_batch(
+        &self,
+        text_batch: &[String],
+        language: &str,
+    ) -> Result<(Vec<Tensor>, Vec<Tensor>)> {
         let (input_batch, lens_batch): (Vec<Tensor>, Vec<Tensor>) = text_batch
             .iter()
             .map(|text| {
@@ -109,29 +122,36 @@ impl Predictor {
             .collect::<Result<Vec<_>>>()?
             .into_iter()
             .unzip();
-    
+
         Ok((input_batch, lens_batch))
     }
 
-    
-    fn predict_batch(&self, texts: Vec<String>, batch_size: usize, language: String) -> Result<BatchPrediction> {
+    fn predict_batch(
+        &self,
+        texts: Vec<String>,
+        batch_size: usize,
+        language: String,
+    ) -> Result<BatchPrediction> {
         let mut predictions = HashMap::new();
         let text_batches = batchify(texts, batch_size);
 
         for text_batch in text_batches {
-            let (input_batch, lens_batch)= self.process_text_batch(&text_batch, &language)?;
-            
-            let input_batch = Tensor::pad_sequence(&input_batch, true, 0.0).to(self.device);
+            let (input_batch, lens_batch) = self.process_text_batch(&text_batch, &language)?;
+
+            let input_batch = Tensor::pad_sequence(&input_batch, true, 0.0, "right").to(self.device);
             let lens_batch = Tensor::stack(&lens_batch, 0).to(self.device);
 
             let start_indx = self.phoneme_tokenizer.get_start_index(&language) as i64;
-            let start_inds = Tensor::from_slice(&vec![start_indx; input_batch.size()[0].try_into().unwrap()]).to(self.device);
-            
+            let start_inds =
+                Tensor::from_slice(&vec![start_indx; input_batch.size()[0].try_into().unwrap()])
+                    .to(self.device);
+
             let batch: HashMap<&str, Tensor> = vec![
                 ("text", input_batch),
                 ("text_len", lens_batch),
                 ("start_index", start_inds),
-            ].into_iter()
+            ]
+            .into_iter()
             .map(|(key, value)| (key, value.clone(&value)))
             .collect();
 
@@ -140,14 +160,20 @@ impl Predictor {
                 .into_iter()
                 .map(|(key, value)| (IValue::String(key.to_string()), IValue::Tensor(value)))
                 .collect();
-            
+
             // Convert batch into IValue, so it works :)
             let batch_input = IValue::from(batch);
 
             let output_raw: IValue = self.model.method_is("generate", &[batch_input])?;
             let (output_batch, probs_batch): (Tensor, Tensor) = output_raw.try_into()?;
-            
-            for (text, output, probs) in izip!(text_batch.iter(), output_batch.chunk(text_batch.len() as i64, 0).iter(), probs_batch.chunk(text_batch.len() as i64, 0).iter()) {
+
+            let output_batch_chunk = output_batch.chunk(text_batch.len() as i64, 0);
+            let probs_batch_chunk = probs_batch.chunk(text_batch.len() as i64, 0);
+            for (text, output, probs) in izip!(
+                text_batch.iter(),
+                output_batch_chunk.iter(),
+                probs_batch_chunk.iter()
+            ) {
                 let o = output.squeeze();
 
                 let seq_len = get_len_util_stop(&o, self.phoneme_tokenizer.end_index) as i64;
@@ -175,13 +201,13 @@ impl Predictor {
 
 #[cfg(test)]
 mod tests {
+    use dotenv::dotenv;
     use std::env;
     use std::path::PathBuf;
-    use dotenv::dotenv;
 
     use super::*;
-    use tch::Device;
     use crate::dp::phonemizer::PhonemizerConfig;
+    use tch::Device;
 
     fn build_predictor() -> Result<Predictor> {
         dotenv().ok();
