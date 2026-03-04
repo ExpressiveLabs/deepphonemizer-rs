@@ -1,6 +1,9 @@
 # DeepPhonemizer in Rust
 This repository contains a pure Rust implementation of the inferencing engine from [DeepPhonemizer](https://github.com/as-ideas/DeepPhonemizer) using the `tch` crate and the TorchScript JIT functionality. This crate is available via [crates.io](https://crates.io/crates/deepphonemizer).
 
+### Version 2? In this economy?
+Since creating this crate, our needs at ExpressiveLabs have changed. We are now revisiting our implementation of DeepPhonemizer to give it some much-needed attention. We will be migrating to the Burn framework, and implement the complete training and inferencing pipeline in native Rust.
+
 ## Usage
 To use the crate, add the following to your `Cargo.toml`:
 ```toml

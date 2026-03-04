@@ -1,7 +1,95 @@
-// use tch::nn::{Embedding, Linear, LayerNorm};
-// use tch::nn::Module::{TransformerEncoder, TransformerEncoderLayer};
+use burn::{
+    Tensor,
+    module::Module,
+    nn::{
+        Embedding,
+        Linear,
+        PositionalEncoding,
+        transformer::{
+            TransformerDecoder, TransformerEncoder, TransformerEncoderInput
+        }
+    },
+    prelude::Backend,
+    tensor::Int
+};
 
-// use crate::model;
+use crate::model::utils::_make_len_mask;
+
+pub struct FTInputs<B: Backend> {
+    pub text: Tensor<B, 2, Int>
+}
+
+#[derive(Module, Debug)]
+pub struct ForwardTransformer<B: Backend> {
+    pub d_model: usize,
+    pub embedding: Embedding<B>,
+    pub pos_encoder: PositionalEncoding<B>,
+    pub encoder: TransformerEncoder<B>,
+    pub fc_out: Linear<B>
+}
+
+impl<B: Backend> ForwardTransformer<B> {
+    pub fn forward(&self, inputs: FTInputs<B>) -> Tensor<B, 2> {
+        let x = inputs.text.permute([0, 1]); // shape: [T, N]
+        let src_pad_mask = _make_len_mask(&x);
+
+        let mut x = self.embedding.forward(x);
+        x = self.pos_encoder.forward(x);
+        let p = TransformerEncoderInput::new(x).mask_pad(src_pad_mask);
+        x = self.encoder.forward(p);
+        x = self.fc_out.forward(x);
+        let x = x.squeeze().permute([0, 1]);
+        x
+    }
+}
+
+pub struct ARTInputs<B: Backend> {
+    pub text: Tensor<B, 2, Int>,
+    pub phonemes: Tensor<B, 2, Int>
+}
+
+#[derive(Module, Debug)]
+pub struct AutoregressiveTransformer<B: Backend> {
+    pub end_index: usize,
+    pub d_model: usize,
+    pub encoder: Embedding<B>,
+    pub pos_encoder: PositionalEncoding<B>,
+    pub decoder: Embedding<B>,
+    pub pos_decoder: PositionalEncoding<B>,
+    pub transformer_enc: TransformerEncoder<B>,
+    pub transformer_dec: TransformerDecoder<B>,
+    pub fc_out: Linear<B>
+}
+
+impl<B: Backend> AutoregressiveTransformer<B> {
+    pub fn forward(&self, inputs: ARTInputs<B>) -> Tensor<B, 2> {
+        let source = inputs.text;
+        let target = inputs.phonemes.slice([1, 0, -1, 1]); // TODO: ???
+
+        let source = source.permute([0, 1]); // shape: [T, N]
+        let target = target.permute([0, 1]);
+
+        let target_mask = _generate_square_subsequent_mask(target.size()[0] as usize);
+
+        let source_pad_mask = _make_len_mask(&source);
+        let target_pad_mask = _make_len_mask(&target);
+
+        let mut source = self.encoder.forward(source);
+        source = self.pos_encoder.forward(source);
+
+        let mut target = self.decoder.forward(target);
+        target = self.pos_decoder.forward(target);
+
+        // TODO: complete forward pass
+        // output = self.transformer(src, trg, src_mask=None, tgt_mask=trg_mask,
+        //                           memory_mask=None, src_key_padding_mask=src_pad_mask,
+        //                           tgt_key_padding_mask=trg_pad_mask, memory_key_padding_mask=src_pad_mask)
+        // output = self.fc_out(output)
+        // output = output.transpose(0, 1)
+        // return output
+    }
+}
+
 // use crate::model::utils::{get_dedup_tokens, _make_len_mask, _generate_square_subsequent_mask, PositionalEncoding};
 // use crate::preprocessing::text::Preprocessor;
 
@@ -68,7 +156,7 @@
 //         //  batch (Dict[str, torch.Tensor]): Input batch entry 'text' (text tensor).
 
 //         // Returns:
-//         //   Tensor: Predictions. 
+//         //   Tensor: Predictions.
 
 //         x = batch["text"];
 //         x = x.transpose(0, 1); // shape: [T, N]
@@ -91,7 +179,7 @@
 //         //   Tuple: The first element is a Tensor (phoneme tokens) and the second element
 //         //          is a tensor (phoneme token probabilities).
 
-        
+
 //         x = self.forward(batch);
 //         get_dedup_tokens(x)
 //     }
@@ -280,7 +368,7 @@
 
 // pub fn create_model(model_type: ModelType, config: Map<str, Any>) -> Model {
 //     // Initializes a model from a config for a given model type.
-//     // 
+//     //
 //     // Args:
 //     //     model_type (ModelType): Type of model to be initialized.
 //     //     config (dict): Configuration containing hyperparams.
@@ -346,6 +434,8 @@
 // }
 
 // use std::path::Path;
+// use burn::module::Module;
+// use burn::prelude::Backend;
 // use tch::{Device, CModule};
 
 // // Initializes a model from a checkpoint (.pt file).
