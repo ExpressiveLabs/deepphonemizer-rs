@@ -1,4 +1,4 @@
-use burn::{nn::{EmbeddingConfig, LayerNormConfig, LinearConfig, PositionalEncodingConfig, transformer::{TransformerDecoderConfig, TransformerEncoderConfig, TransformerEncoderLayer}}, prelude::Backend};
+use burn::{nn::{EmbeddingConfig, LinearConfig, PositionalEncodingConfig, transformer::{TransformerDecoderConfig, TransformerEncoderConfig}}, prelude::*};
 
 use crate::model::model::{AutoregressiveTransformer, ForwardTransformer};
 

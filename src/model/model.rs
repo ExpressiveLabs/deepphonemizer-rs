@@ -6,14 +6,14 @@ use burn::{
         Linear,
         PositionalEncoding,
         transformer::{
-            TransformerDecoder, TransformerEncoder, TransformerEncoderInput
+            TransformerDecoder, TransformerDecoderInput, TransformerEncoder, TransformerEncoderInput
         }
     },
     prelude::Backend,
     tensor::Int
 };
 
-use crate::model::utils::_make_len_mask;
+use crate::model::utils::{_generate_square_subsequent_mask, _make_len_mask};
 
 pub struct FTInputs<B: Backend> {
     pub text: Tensor<B, 2, Int>
@@ -69,7 +69,8 @@ impl<B: Backend> AutoregressiveTransformer<B> {
         let source = source.permute([0, 1]); // shape: [T, N]
         let target = target.permute([0, 1]);
 
-        let target_mask = _generate_square_subsequent_mask(target.size()[0] as usize);
+        let target_mask = _generate_square_subsequent_mask(target.dims()[0] as usize, &source.device());
+        let target_mask = target_mask.unsqueeze_dim(1);
 
         let source_pad_mask = _make_len_mask(&source);
         let target_pad_mask = _make_len_mask(&target);
@@ -87,8 +88,21 @@ impl<B: Backend> AutoregressiveTransformer<B> {
         // output = self.fc_out(output)
         // output = output.transpose(0, 1)
         // return output
+
+        let inputs = TransformerEncoderInput::new(source)
+        	.mask_pad(source_pad_mask.clone());
+		let memory = self.transformer_enc.forward(inputs);
+
+		let inputs = TransformerDecoderInput::new(target, memory)
+    		.target_mask_pad(target_pad_mask) // is this the same as key_padding_mask???
+			.target_mask_attn(target_mask)
+			.memory_mask_pad(source_pad_mask);
+		let output = self.transformer_dec.forward(inputs);
+		let output = self.fc_out.forward(output);
+		output.squeeze().permute([0, 1])
     }
 }
+
 
 // use crate::model::utils::{get_dedup_tokens, _make_len_mask, _generate_square_subsequent_mask, PositionalEncoding};
 // use crate::preprocessing::text::Preprocessor;
@@ -409,45 +423,43 @@ impl<B: Backend> AutoregressiveTransformer<B> {
 //     (model, checkpoint)
 // }
 
-// #[cfg(test)]
-// mod tests {
-//     use super::*;
+#[cfg(test)]
+mod tests {
+    use burn::{
+    	backend::Metal,
+     	tensor::Distribution
+    };
 
-//     #[test]
-//     fn test_forward_transformer() {
-//         let mut model = ForwardTransformer::new(10, 10, 512, 1024, 4, 0.1, 1);
-//         let batch = Map::new();
-//         batch.insert("text", torch::randint(0, 10, &[10, 10], (Kind::Int64, Device::Cpu)));
-//         let output = model.forward(batch);
-//         assert_eq!(output.size(), vec![10, 10, 10]);
-//     }
+    use crate::{model::config::FTConfig};
 
-//     #[test]
-//     fn test_autoregressive_transformer() {
-//         let mut model = AutoregressiveTransformer::new(10, 10, 10, 512, 1024, 4, 4, 0.1, 1);
-//         let batch = Map::new();
-//         batch.insert("text", torch::randint(0, 10, &[10, 10], (Kind::Int64, Device::Cpu)));
-//         batch.insert("phonemes", torch::randint(0, 10, &[10, 10], (Kind::Int64, Device::Cpu)));
-//         let output = model.forward(batch);
-//         assert_eq!(output.size(), vec![10, 10, 10]);
-//     }
-// }
+    use super::*;
 
-// use std::path::Path;
-// use burn::module::Module;
-// use burn::prelude::Backend;
-// use tch::{Device, CModule};
+    #[test]
+    fn test_forward_transformer() {
+		type MyBackend = Metal<f32, i32>;
 
-// // Initializes a model from a checkpoint (.pt file).
+		let device = Default::default();
 
-// // Args:
-// //     checkpoint_path (str): Path to checkpoint file (.pt).
-// //     device (str): Device to put the model to ('cpu' or 'cuda').
+		let model = FTConfig {
+		  		..Default::default()
+		}.init::<MyBackend>(&device);
 
-// // Returns: Tuple: The first element is a Model (the loaded model)
-// //          and the second element is a dictionary (config).
-// pub fn load_checkpoint(model_path: &Path, config_path: &Path, device: Device) -> (Model, Map<str, Any>) {
+		let d = Distribution::Uniform(0.0, 10.0);
+		let inputs = FTInputs {
+			text: Tensor::<MyBackend, 2, Int>::random([10, 10], d, &device)
+		};
 
-//     let model = CModule::load_on_device(model_path, device)?;
+		let output = model.forward(inputs);
+		println!("out dims: {:?}", output.dims());
+	}
 
-// }
+	// #[test]
+	// fn test_autoregressive_transformer() {
+	//     let mut model = AutoregressiveTransformer::new(10, 10, 10, 512, 1024, 4, 4, 0.1, 1);
+	//     let batch = Map::new();
+	//     batch.insert("text", torch::randint(0, 10, &[10, 10], (Kind::Int64, Device::Cpu)));
+	//     batch.insert("phonemes", torch::randint(0, 10, &[10, 10], (Kind::Int64, Device::Cpu)));
+	//     let output = model.forward(batch);
+	//     assert_eq!(output.size(), vec![10, 10, 10]);
+	// }
+}

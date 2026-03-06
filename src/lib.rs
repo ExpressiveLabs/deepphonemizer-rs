@@ -5,4 +5,4 @@ pub mod dp;
 mod model;
 mod preprocessing;
 
-pub use dp::phonemizer::Phonemizer;
+// pub use dp::phonemizer::Phonemizer;

@@ -19,4 +19,9 @@ serde-pickle = "1.1.1"
 dotenv = "0.15.0"
 ndarray = "0.17.2"
 map-macro = "0.3.0"
-burn = { version = "0.20.1", features = ["wgpu", "ndarray", "train", "tui", "fusion"] }
+
+[target.'cfg(not(target_os = "macos"))'.dependencies]
+burn = { version = "0.20.1", features = ["vulkan", "ndarray", "train", "tui", "fusion"] }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+burn = { version = "0.20.1", features = ["wgpu", "metal", "ndarray", "train", "tui"] }
